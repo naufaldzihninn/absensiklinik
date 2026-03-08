@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#0F172A">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="description" content="Dashboard Absensi Klinik Prima Insani — Beranda Pegawai">
+    <title>Beranda — Absensi Klinik Prima Insani</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/png" href="../shared/assets/logo.png">
+    <link rel="apple-touch-icon" href="../shared/assets/logo.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+    <div class="app-container">
+        <div class="page-content">
+
+            <!-- Greeting Header -->
+            <div class="greeting-header">
+                <p class="greeting-text" id="greetingText">Selamat Pagi 👋</p>
+                <h1 class="greeting-name" id="greetingName">...</h1>
+            </div>
+
+            <!-- Clock & Date -->
+            <div class="glass-card" style="text-align: center; margin-bottom: 20px;">
+                <div class="clock-display" id="liveClock">--:--</div>
+                <p class="clock-date" id="liveDate">...</p>
+            </div>
+
+            <!-- Holiday Banner (hidden by default) -->
+            <div id="holidayBanner"
+                style="display: none; background: linear-gradient(135deg, #F59E0B22, #D9770622); border: 1px solid #F59E0B44; border-radius: 14px; padding: 14px 16px; margin-bottom: 20px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 1.5rem;">🏖️</span>
+                    <div>
+                        <div style="font-weight: 700; font-size: 0.85rem; color: #FBBF24;" id="holidayName">Hari Libur
+                        </div>
+                        <div style="font-size: 0.75rem; color: #94A3B8;">Absensi tetap berjalan meskipun hari libur
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Upcoming Holidays -->
+            <div id="upcomingHolidays" style="display: none; margin-bottom: 20px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+                    <span style="font-size: 0.85rem; font-weight: 600; color: #CBD5E1;">📅 Libur Mendatang</span>
+                </div>
+                <div id="holidayList" style="display: flex; flex-direction: column; gap: 8px;"></div>
+            </div>
+
+            <!-- Today's Status Card -->
+            <div class="status-card" id="statusCard">
+                <div class="flex items-center justify-between mb-sm">
+                    <span class="text-sm" style="opacity: 0.85;">Status Hari Ini</span>
+                    <span class="badge badge-info" id="statusBadge">Memuat...</span>
+                </div>
+                <h2 id="statusTitle" style="margin-top: 8px;">Memuat...</h2>
+                <p class="text-sm" id="statusDetail" style="opacity: 0.8; margin-top: 4px;"></p>
+            </div>
+
+            <!-- GPS Status -->
+            <div class="flex justify-center" style="margin: 20px 0;">
+                <div class="gps-status in-range" id="gpsStatus">
+                    <span class="gps-dot"></span>
+                    <span id="gpsText">Memeriksa lokasi...</span>
+                </div>
+            </div>
+
+            <!-- Clock In / Out Buttons -->
+            <div class="action-row" id="actionButtons">
+                <button class="quick-action-btn clock-in" id="clockInBtn" onclick="handleClockIn()">
+                    <span class="action-icon">📥</span>
+                    Clock In
+                </button>
+                <button class="quick-action-btn clock-out" id="clockOutBtn" onclick="handleClockOut()">
+                    <span class="action-icon">📤</span>
+                    Clock Out
+                </button>
+            </div>
+
+            <!-- Recent History -->
+            <div class="section-header" style="margin-top: 28px;">
+                <h3 class="section-title">Riwayat Terkini</h3>
+                <a href="riwayat.html" class="section-link">Lihat Semua →</a>
+            </div>
+
+            <div id="recentHistory">
+                <!-- Filled by JS -->
+            </div>
+
+        </div>
+
+        <!-- Bottom Navigation -->
+        <nav class="bottom-nav">
+            <a href="index.html" class="nav-item active" data-page="home">
+                <span class="nav-icon">🏠</span>
+                Beranda
+            </a>
+            <a href="riwayat.html" class="nav-item" data-page="riwayat">
+                <span class="nav-icon">📋</span>
+                Riwayat
+            </a>
+            <a href="profil.html" class="nav-item" data-page="profil">
+                <span class="nav-icon">👤</span>
+                Profil
+            </a>
+        </nav>
+    </div>
+
+    <script src="js/app.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/geolocation.js"></script>
+    <script>
+        // Auth guard
+        if (!API.isAuthenticated()) {
+            window.location.href = 'login.html';
+        } else {
+            const session = API.getSession();
+            if (session && !session.has_vektor) {
+                window.location.href = 'register-face.html';
+            } else {
+                initDashboard();
+            }
+        }
+
+        async function initDashboard() {
+            const session = API.getSession();
+
+            // Greeting
+            document.getElementById('greetingText').textContent = App.getGreeting() + ' 👋';
+            document.getElementById('greetingName').textContent = session?.nama_lengkap || '...';
+
+            // Clock
+            App.initClock('liveClock', 'liveDate');
+
+            // GPS check
+            checkGPS();
+
+            // Today's status & history from API
+            await loadAttendanceData();
+
+            // Holiday check
+            loadHolidayInfo();
+
+            // Active nav
+            App.setActiveNav('home');
+        }
+
+        async function loadHolidayInfo() {
+            try {
+                // Check if today is a holiday
+                const todayCheck = await API.checkHoliday();
+                if (todayCheck.isHoliday) {
+                    document.getElementById('holidayBanner').style.display = 'block';
+                    document.getElementById('holidayName').textContent = `🏖️ ${todayCheck.name}`;
+                }
+
+                // Load upcoming holidays
+                const holidays = await API.getHolidays();
+                const today = new Date().toISOString().split('T')[0];
+                const upcoming = (holidays.data || [])
+                    .filter(h => h.date >= today)
+                    .slice(0, 3);
+
+                if (upcoming.length > 0) {
+                    document.getElementById('upcomingHolidays').style.display = 'block';
+                    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+                    document.getElementById('holidayList').innerHTML = upcoming.map(h => {
+                        const d = new Date(h.date + 'T00:00:00');
+                        const dateStr = `${d.getDate()} ${months[d.getMonth()]}`;
+                        const isToday = h.date === today;
+                        return `
+                            <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:${isToday ? 'rgba(245,158,11,0.1)' : 'var(--bg-card)'};border-radius:10px;border:1px solid ${isToday ? 'rgba(245,158,11,0.2)' : 'rgba(255,255,255,0.06)'}">
+                                <div style="min-width:44px;height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(255,255,255,0.06);border-radius:8px">
+                                    <span style="font-size:0.7rem;color:#94A3B8">${months[d.getMonth()]}</span>
+                                    <span style="font-weight:700;font-size:0.95rem">${d.getDate()}</span>
+                                </div>
+                                <div style="flex:1">
+                                    <div style="font-weight:600;font-size:0.8rem">${h.name}</div>
+                                    <div style="font-size:0.7rem;color:#64748B">${isToday ? 'Hari ini' : dateStr}</div>
+                                </div>
+                            </div>`;
+                    }).join('');
+                }
+            } catch (err) {
+                console.warn('Holiday load:', err);
+            }
+        }
+
+        async function checkGPS() {
+            const gpsStatus = document.getElementById('gpsStatus');
+            const gpsText = document.getElementById('gpsText');
+            const clockInBtn = document.getElementById('clockInBtn');
+            const clockOutBtn = document.getElementById('clockOutBtn');
+
+            try {
+                // Get clinic settings for radius
+                const settingsRes = await API.getSettings();
+                const settings = settingsRes.data;
+
+                // Get real GPS position
+                const pos = await Geolocation.getCurrentPosition();
+                const distance = Geolocation.haversineDistance(
+                    pos.latitude, pos.longitude,
+                    parseFloat(settings.latitude), parseFloat(settings.longitude)
+                );
+                const distM = Math.round(distance);
+
+                // Store GPS for clock-in/out
+                window._currentGPS = { latitude: pos.latitude, longitude: pos.longitude };
+
+                if (distM <= settings.batas_radius_meter) {
+                    gpsStatus.className = 'gps-status in-range';
+                    gpsText.textContent = `Dalam radius klinik (${distM}m)`;
+                    clockInBtn.disabled = false;
+                    clockOutBtn.disabled = false;
+                } else {
+                    gpsStatus.className = 'gps-status out-range';
+                    gpsText.textContent = `Di luar radius (${distM}m / ${settings.batas_radius_meter}m)`;
+                    clockInBtn.disabled = true;
+                    clockOutBtn.disabled = true;
+                }
+            } catch (err) {
+                gpsStatus.className = 'gps-status out-range';
+                gpsText.textContent = 'GPS tidak tersedia';
+                // Allow for development without GPS
+                window._currentGPS = { latitude: -6.2, longitude: 106.816666 };
+                clockInBtn.disabled = false;
+                clockOutBtn.disabled = false;
+            }
+        }
+
+        async function loadAttendanceData() {
+            try {
+                const result = await API.getHistory(7);
+                const records = result.data || [];
+
+                // Today's status
+                const todayStr = new Date().toISOString().split('T')[0];
+                const todayRecords = records.filter(r => r.waktu_absen.startsWith(todayStr));
+                const clockIn = todayRecords.find(r => r.tipe_absen === 'MASUK');
+                const clockOut = todayRecords.find(r => r.tipe_absen === 'PULANG');
+
+                updateTodayStatus(clockIn, clockOut);
+                renderRecentHistory(records.slice(0, 6));
+            } catch (err) {
+                console.error('Load attendance error:', err);
+                updateTodayStatus(null, null);
+                renderRecentHistory([]);
+            }
+        }
+
+        function updateTodayStatus(clockIn, clockOut) {
+            const statusBadge = document.getElementById('statusBadge');
+            const statusTitle = document.getElementById('statusTitle');
+            const statusDetail = document.getElementById('statusDetail');
+
+            if (clockIn && clockOut) {
+                statusBadge.className = 'badge badge-success';
+                statusBadge.textContent = 'Selesai';
+                statusTitle.textContent = 'Sudah Clock-out ✅';
+                statusDetail.textContent = `Masuk: ${App.formatTime(clockIn.waktu_absen)} • Pulang: ${App.formatTime(clockOut.waktu_absen)}`;
+                document.getElementById('clockInBtn').disabled = true;
+                document.getElementById('clockOutBtn').disabled = true;
+            } else if (clockIn) {
+                statusBadge.className = 'badge badge-warning';
+                statusBadge.textContent = clockIn.status_kehadiran;
+                statusTitle.textContent = 'Sudah Clock-in 🕐';
+                statusDetail.textContent = `Masuk: ${App.formatTime(clockIn.waktu_absen)} • Shift ${clockIn.nama_shift}`;
+                document.getElementById('clockInBtn').disabled = true;
+            } else {
+                statusBadge.className = 'badge badge-info';
+                statusBadge.textContent = 'Menunggu';
+                statusTitle.textContent = 'Belum Absen';
+                statusDetail.textContent = 'Silakan lakukan clock-in';
+            }
+        }
+
+        function renderRecentHistory(records) {
+            const container = document.getElementById('recentHistory');
+
+            if (records.length === 0) {
+                container.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-state-icon">📋</div>
+            <p class="empty-state-text">Belum ada riwayat absensi</p>
+          </div>
+        `;
+                return;
+            }
+
+            container.innerHTML = records.map(record => {
+                const isMasuk = record.tipe_absen === 'MASUK';
+                const statusClass = record.status_kehadiran === 'Tepat Waktu' ? 'success' : 'warning';
+                return `
+          <div class="record-item">
+            <div class="record-icon ${isMasuk ? 'masuk' : 'pulang'}">
+              ${isMasuk ? '📥' : '📤'}
+            </div>
+            <div class="record-info">
+              <div class="record-title">${isMasuk ? 'Clock In' : 'Clock Out'}</div>
+              <div class="record-sub">${App.formatRecordDate(record.waktu_absen)} • Shift ${record.nama_shift || '-'}</div>
+            </div>
+            <div class="record-meta">
+              <div class="record-time">${App.formatTime(record.waktu_absen)}</div>
+              ${isMasuk ? `<div class="record-status"><span class="badge badge-${statusClass}">${record.status_kehadiran}</span></div>` : ''}
+            </div>
+          </div>
+        `;
+            }).join('');
+        }
+
+        function handleClockIn() {
+            window.location.href = 'absen.html?type=masuk';
+        }
+
+        function handleClockOut() {
+            window.location.href = 'absen.html?type=pulang';
+        }
+    </script>
+</body>
+
+</html>

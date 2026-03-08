@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Data Absensi — Admin Klinik Prima Insani">
+    <title>Absensi — Admin Klinik Prima Insani</title>
+    <link rel="icon" type="image/png" href="../shared/assets/logo.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="css/admin.css">
+</head>
+
+<body>
+    <div id="sidebarContainer"></div>
+
+    <div class="main-content">
+        <div id="topBarContainer"></div>
+
+        <div class="page-container">
+            <!-- Filters -->
+            <div
+                style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 12px;">
+                <div class="filter-row">
+                    <div class="search-bar">
+                        <span>🔍</span>
+                        <input type="text" id="searchInput" placeholder="Cari nama pegawai..."
+                            oninput="filterRecords()">
+                    </div>
+                    <input type="date" id="dateFrom" class="filter-select" onchange="filterRecords()">
+                    <span style="color: #94A3B8; font-size: 0.85rem;">s/d</span>
+                    <input type="date" id="dateTo" class="filter-select" onchange="filterRecords()">
+                    <select id="statusFilter" class="filter-select" onchange="filterRecords()">
+                        <option value="">Semua Status</option>
+                        <option value="Tepat Waktu">Tepat Waktu</option>
+                        <option value="Terlambat">Terlambat</option>
+                    </select>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <button class="admin-btn admin-btn-outline" onclick="exportData('excel')">
+                        📊 Export Excel
+                    </button>
+                    <button class="admin-btn admin-btn-outline" onclick="exportData('pdf')">
+                        📄 Export PDF
+                    </button>
+                </div>
+            </div>
+
+            <!-- Attendance Table -->
+            <div class="panel">
+                <div class="panel-header">
+                    <h3 class="panel-title">Data Absensi</h3>
+                    <span style="color: #94A3B8; font-size: 0.8rem;" id="recordCount">0 catatan</span>
+                </div>
+                <div class="panel-body-flush">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Nama Pegawai</th>
+                                <th>Tanggal</th>
+                                <th>Shift</th>
+                                <th>Tipe</th>
+                                <th>Waktu</th>
+                                <th>Status</th>
+                                <th>Akurasi AI</th>
+                                <th>Jarak</th>
+                                <th>Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="attendanceTableBody">
+                            <!-- Filled by JS -->
+                        </tbody>
+                    </table>
+                </div>
+                <!-- Pagination -->
+                <div class="pagination">
+                    <div class="pagination-info" id="paginationInfo">Menampilkan 1-20 dari 0</div>
+                    <div class="pagination-buttons" id="paginationButtons">
+                        <!-- Filled by JS -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Map Modal -->
+    <div class="modal-overlay" id="mapModal">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h3 id="mapModalTitle">Lokasi Absensi</h3>
+                <button class="modal-close" onclick="AdminApp.closeModal('mapModal')">✕</button>
+            </div>
+            <div class="modal-body">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+                    <div>
+                        <div style="color: #64748B; font-size: 0.8rem;">Koordinat</div>
+                        <div style="font-weight: 600; font-size: 0.9rem;" id="mapCoords">-</div>
+                    </div>
+                    <div>
+                        <div style="color: #64748B; font-size: 0.8rem;">Jarak dari Klinik</div>
+                        <div style="font-weight: 600; font-size: 0.9rem;" id="mapDistance">-</div>
+                    </div>
+                    <div>
+                        <div style="color: #64748B; font-size: 0.8rem;">Akurasi Wajah</div>
+                        <div style="font-weight: 600; font-size: 0.9rem; color: #22C55E;" id="mapAccuracy">-</div>
+                    </div>
+                    <div>
+                        <div style="color: #64748B; font-size: 0.8rem;">Waktu</div>
+                        <div style="font-weight: 600; font-size: 0.9rem;" id="mapTime">-</div>
+                    </div>
+                </div>
+                <div id="mapContainer"
+                    style="height: 300px; border-radius: 10px; overflow: hidden; border: 1px solid #E2E8F0;"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script src="js/admin-app.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+    <script>
+        if (!AdminAPI.isAuthenticated()) { window.location.href = 'login.html'; }
+
+        document.getElementById('sidebarContainer').innerHTML = AdminApp.renderSidebar('absensi');
+        document.getElementById('topBarContainer').innerHTML = AdminApp.renderTopBar('Data Absensi');
+
+        const today = new Date();
+        const weekAgo = new Date(today); weekAgo.setDate(weekAgo.getDate() - 7);
+        document.getElementById('dateFrom').value = weekAgo.toISOString().split('T')[0];
+        document.getElementById('dateTo').value = today.toISOString().split('T')[0];
+
+        let currentPage = 1;
+        const perPage = 20;
+        let allRecords = [];
+        let filteredRecords = [];
+
+        loadRecords();
+
+        async function loadRecords() {
+            try {
+                const result = await AdminAPI.getHistory('days=365');
+                allRecords = result.data || [];
+                filterRecords();
+            } catch (err) {
+                AdminApp.showToast(err.message, 'error');
+            }
+        }
+
+        function filterRecords() {
+            const query = document.getElementById('searchInput').value.toLowerCase();
+            const dateFrom = document.getElementById('dateFrom').value;
+            const dateTo = document.getElementById('dateTo').value;
+            const statusFilter = document.getElementById('statusFilter').value;
+
+            filteredRecords = allRecords.filter(r => {
+                const matchName = !query || (r.nama_pegawai || '').toLowerCase().includes(query);
+                const recordDate = r.waktu_absen.split('T')[0];
+                const matchDateFrom = !dateFrom || recordDate >= dateFrom;
+                const matchDateTo = !dateTo || recordDate <= dateTo;
+                const matchStatus = !statusFilter || r.status_kehadiran === statusFilter;
+                const isMasuk = r.tipe_absen === 'MASUK';
+                return matchName && matchDateFrom && matchDateTo && (isMasuk || !statusFilter) && (matchStatus || !isMasuk);
+            });
+
+            currentPage = 1;
+            renderTable();
+        }
+
+        function renderTable() {
+            const start = (currentPage - 1) * perPage;
+            const end = start + perPage;
+            const pageRecords = filteredRecords.slice(start, end);
+
+            document.getElementById('recordCount').textContent = `${filteredRecords.length} catatan`;
+            document.getElementById('paginationInfo').textContent =
+                `Menampilkan ${start + 1}-${Math.min(end, filteredRecords.length)} dari ${filteredRecords.length}`;
+
+            const tbody = document.getElementById('attendanceTableBody');
+            tbody.innerHTML = pageRecords.map(r => {
+                const isMasuk = r.tipe_absen === 'MASUK';
+                const typeBadge = isMasuk
+                    ? '<span class="admin-badge admin-badge-success">MASUK</span>'
+                    : '<span class="admin-badge admin-badge-info">PULANG</span>';
+
+                let statusBadge = '';
+                if (isMasuk) {
+                    statusBadge = r.status_kehadiran === 'Tepat Waktu'
+                        ? '<span class="admin-badge admin-badge-success">Tepat Waktu</span>'
+                        : '<span class="admin-badge admin-badge-warning">Terlambat</span>';
+                } else {
+                    statusBadge = '<span class="admin-badge admin-badge-default">-</span>';
+                }
+
+                return `
+          <tr>
+            <td style="font-weight: 600;">${r.nama_pegawai || '-'}</td>
+            <td>${AdminApp.formatDate(r.waktu_absen)}</td>
+            <td>${r.nama_shift || '-'}</td>
+            <td>${typeBadge}</td>
+            <td style="font-weight: 600;">${AdminApp.formatTime(r.waktu_absen)}</td>
+            <td>${statusBadge}</td>
+            <td style="font-weight: 600; color: #22C55E;">${((r.akurasi_wajah || 0) * 100).toFixed(1)}%</td>
+            <td>${r.jarak_meter || 0}m</td>
+            <td>
+              <button class="admin-btn admin-btn-outline admin-btn-sm" onclick="showMap('${r.koordinat_absen || ''}', ${r.jarak_meter || 0}, ${r.akurasi_wajah || 0}, '${r.waktu_absen}', '${r.nama_pegawai || '-'}')">
+                🗺️ Peta
+              </button>
+            </td>
+          </tr>
+        `;
+            }).join('');
+
+            const totalPages = Math.ceil(filteredRecords.length / perPage);
+            const buttons = document.getElementById('paginationButtons');
+            let html = '';
+            for (let i = 1; i <= Math.min(totalPages, 5); i++) {
+                html += `<button class="pagination-btn ${i === currentPage ? 'active' : ''}" onclick="goToPage(${i})">${i}</button>`;
+            }
+            buttons.innerHTML = html;
+        }
+
+        function goToPage(page) { currentPage = page; renderTable(); }
+
+        let leafletMap = null;
+        let clinicSettings = null;
+
+        // Load clinic settings for map center
+        (async () => {
+            try {
+                const res = await AdminAPI.getSettings();
+                clinicSettings = res.data;
+            } catch (e) { console.warn('Settings load:', e); }
+        })();
+
+        function showMap(coords, distance, accuracy, time, name) {
+            document.getElementById('mapModalTitle').textContent = `Lokasi Absensi — ${name}`;
+            document.getElementById('mapCoords').textContent = coords || '-';
+            document.getElementById('mapDistance').textContent = `${distance} meter`;
+            document.getElementById('mapAccuracy').textContent = `${(accuracy * 100).toFixed(1)}%`;
+            document.getElementById('mapTime').textContent = AdminApp.formatDateTime(time);
+            AdminApp.openModal('mapModal');
+
+            // Render Leaflet map after modal is visible
+            setTimeout(() => {
+                const container = document.getElementById('mapContainer');
+                if (leafletMap) { leafletMap.remove(); leafletMap = null; }
+
+                // Parse employee coordinates
+                let empLat = -6.2, empLng = 106.816666;
+                if (coords && coords.includes(',')) {
+                    const parts = coords.split(',').map(s => parseFloat(s.trim()));
+                    if (!isNaN(parts[0]) && !isNaN(parts[1])) {
+                        empLat = parts[0]; empLng = parts[1];
+                    }
+                }
+
+                // Clinic coordinates from settings
+                const clinicLat = clinicSettings?.latitude || -6.2;
+                const clinicLng = clinicSettings?.longitude || 106.816666;
+                const radius = clinicSettings?.batas_radius_meter || 50;
+
+                leafletMap = L.map(container).setView([empLat, empLng], 17);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '© OpenStreetMap'
+                }).addTo(leafletMap);
+
+                // Employee marker (blue)
+                L.marker([empLat, empLng]).addTo(leafletMap)
+                    .bindPopup(`<b>${name}</b><br>Jarak: ${distance}m`).openPopup();
+
+                // Clinic marker (red) + radius circle
+                const clinicIcon = L.divIcon({
+                    html: '<div style="background:#DC2626;width:14px;height:14px;border-radius:50%;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.4);"></div>',
+                    iconSize: [14, 14], iconAnchor: [7, 7], className: ''
+                });
+                L.marker([clinicLat, clinicLng], { icon: clinicIcon }).addTo(leafletMap)
+                    .bindPopup(`<b>Klinik Prima Insani</b><br>Radius: ${radius}m`);
+
+                // Radius circle
+                L.circle([clinicLat, clinicLng], {
+                    radius: radius, color: '#6366F1', fillColor: '#6366F1',
+                    fillOpacity: 0.1, weight: 2, dashArray: '5,5'
+                }).addTo(leafletMap);
+
+                // Fit both markers in view
+                const bounds = L.latLngBounds([[empLat, empLng], [clinicLat, clinicLng]]);
+                leafletMap.fitBounds(bounds.pad(0.3));
+            }, 150);
+        }
+
+        function exportData(type) {
+            if (!filteredRecords || filteredRecords.length === 0) {
+                AdminApp.showToast('Tidak ada data untuk diekspor', 'error');
+                return;
+            }
+
+            const rows = filteredRecords.map(r => ({
+                'Nama': r.nama_pegawai || '-',
+                'Tanggal': AdminApp.formatDate(r.waktu_absen),
+                'Shift': r.nama_shift || '-',
+                'Tipe': r.tipe_absen,
+                'Waktu': AdminApp.formatTime(r.waktu_absen),
+                'Status': r.tipe_absen === 'MASUK' ? (r.status_kehadiran || '-') : '-',
+                'Akurasi Wajah': ((r.akurasi_wajah || 0) * 100).toFixed(1) + '%',
+                'Jarak (m)': r.jarak_meter || 0
+            }));
+
+            const dateStr = new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+
+            if (type === 'excel') {
+                const ws = XLSX.utils.json_to_sheet(rows);
+                // Set column widths
+                ws['!cols'] = [
+                    { wch: 22 }, { wch: 14 }, { wch: 10 }, { wch: 10 },
+                    { wch: 8 }, { wch: 14 }, { wch: 14 }, { wch: 10 }
+                ];
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, 'Absensi');
+                XLSX.writeFile(wb, `Absensi_KlinikPrimaInsani_${dateStr}.xlsx`);
+                AdminApp.showToast('File Excel berhasil diunduh!', 'success');
+            }
+
+            if (type === 'pdf') {
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF('l', 'mm', 'a4'); // landscape
+
+                // Header
+                doc.setFontSize(16);
+                doc.setFont('helvetica', 'bold');
+                doc.text('Laporan Absensi — Klinik Prima Insani', 14, 18);
+                doc.setFontSize(9);
+                doc.setFont('helvetica', 'normal');
+                doc.setTextColor(100);
+                doc.text(`Diekspor: ${dateStr} | Total: ${rows.length} record`, 14, 25);
+                doc.setTextColor(0);
+
+                // Table
+                doc.autoTable({
+                    startY: 30,
+                    head: [Object.keys(rows[0])],
+                    body: rows.map(r => Object.values(r)),
+                    styles: { fontSize: 8, cellPadding: 3 },
+                    headStyles: { fillColor: [99, 102, 241], textColor: 255, fontStyle: 'bold' },
+                    alternateRowStyles: { fillColor: [248, 250, 252] },
+                    columnStyles: {
+                        0: { cellWidth: 45 },
+                        4: { halign: 'center' },
+                        6: { halign: 'center' },
+                        7: { halign: 'center' }
+                    }
+                });
+
+                doc.save(`Absensi_KlinikPrimaInsani_${dateStr}.pdf`);
+                AdminApp.showToast('File PDF berhasil diunduh!', 'success');
+            }
+        }
+    </script>
+</body>
+
+</html>

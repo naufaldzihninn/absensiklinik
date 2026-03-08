@@ -1,0 +1,22 @@
+# Render Blueprint — Deploy as single Web Service
+# https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: absensi-klinik-prima-insani
+    runtime: node
+    region: singapore  # Closest to Indonesia
+    plan: free
+    buildCommand: cd backend && npm install
+    startCommand: cd backend && node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SUPABASE_URL
+        sync: false  # Set manually in Render dashboard
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: JWT_SECRET
+        sync: false

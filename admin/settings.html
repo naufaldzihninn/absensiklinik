@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Pengaturan Klinik — Admin Klinik Prima Insani">
+    <title>Pengaturan — Admin Klinik Prima Insani</title>
+    <link rel="icon" type="image/png" href="../shared/assets/logo.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="css/admin.css">
+</head>
+
+<body>
+    <div id="sidebarContainer"></div>
+
+    <div class="main-content">
+        <div id="topBarContainer"></div>
+
+        <div class="page-container">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+
+                <!-- Clinic Location Settings -->
+                <div class="panel">
+                    <div class="panel-header">
+                        <h3 class="panel-title">📍 Lokasi Klinik</h3>
+                    </div>
+                    <div class="panel-body">
+                        <div class="admin-form-group">
+                            <label class="admin-form-label">Nama Klinik</label>
+                            <input type="text" id="clinicName" class="admin-form-input" value="Klinik Prima Insani">
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                            <div class="admin-form-group">
+                                <label class="admin-form-label">Latitude</label>
+                                <input type="text" id="latitude" class="admin-form-input" value="-6.200000">
+                            </div>
+                            <div class="admin-form-group">
+                                <label class="admin-form-label">Longitude</label>
+                                <input type="text" id="longitude" class="admin-form-input" value="106.816666">
+                            </div>
+                        </div>
+                        <div class="admin-form-group">
+                            <label class="admin-form-label">Radius Toleransi (meter)</label>
+                            <input type="number" id="radius" class="admin-form-input" value="50" min="10" max="500">
+                        </div>
+
+                        <!-- Map Preview -->
+                        <div id="settingsMap"
+                            style="height: 220px; border-radius: 10px; overflow: hidden; border: 1px solid #E2E8F0; margin-bottom: 16px;">
+                        </div>
+                        <div style="text-align: center; font-size: 0.75rem; color: #94A3B8; margin-bottom: 16px;">
+                            Lat: <span id="previewLat">-6.200000</span>, Long: <span id="previewLng">106.816666</span>,
+                            Radius: <span id="previewRadius">50</span>m
+                        </div>
+
+                        <button class="admin-btn admin-btn-primary" style="width: 100%;" onclick="saveLocation()">
+                            Simpan Lokasi
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Shift Configuration -->
+                <div class="panel">
+                    <div class="panel-header">
+                        <h3 class="panel-title">⏰ Konfigurasi Shift</h3>
+                    </div>
+                    <div class="panel-body">
+                        <div id="shiftList">
+                            <!-- Filled by JS -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Danger Zone -->
+            <div class="panel" style="margin-top: 20px; border-color: rgba(239,68,68,0.3);">
+                <div class="panel-header" style="border-bottom-color: rgba(239,68,68,0.2);">
+                    <h3 class="panel-title" style="color: #DC2626;">⚠️ Zona Bahaya</h3>
+                </div>
+                <div class="panel-body">
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <div>
+                            <p style="font-weight: 600; color: #334155;">Reset Semua Data Wajah</p>
+                            <p style="color: #94A3B8; font-size: 0.85rem;">Menghapus seluruh data biometrik wajah
+                                pegawai. Semua pegawai harus registrasi ulang.</p>
+                        </div>
+                        <button class="admin-btn admin-btn-danger" onclick="warnDanger()">
+                            Reset Semua
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script src="js/admin-app.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        if (!AdminAPI.isAuthenticated()) { window.location.href = 'login.html'; }
+
+        document.getElementById('sidebarContainer').innerHTML = AdminApp.renderSidebar('settings');
+        document.getElementById('topBarContainer').innerHTML = AdminApp.renderTopBar('Pengaturan Klinik');
+
+        // Live preview + map updates
+        let settingsMap = null;
+        let settingsMarker = null;
+        let settingsCircle = null;
+
+        function updateMapPreview() {
+            const lat = parseFloat(document.getElementById('latitude').value) || -6.2;
+            const lng = parseFloat(document.getElementById('longitude').value) || 106.816666;
+            const rad = parseInt(document.getElementById('radius').value) || 50;
+
+            document.getElementById('previewLat').textContent = lat;
+            document.getElementById('previewLng').textContent = lng;
+            document.getElementById('previewRadius').textContent = rad;
+
+            if (settingsMap) {
+                settingsMap.setView([lat, lng], 17);
+                if (settingsMarker) settingsMarker.setLatLng([lat, lng]);
+                if (settingsCircle) { settingsCircle.setLatLng([lat, lng]); settingsCircle.setRadius(rad); }
+            }
+        }
+
+        function initSettingsMap(lat, lng, radius) {
+            const container = document.getElementById('settingsMap');
+            if (!container) return;
+
+            if (settingsMap) { settingsMap.remove(); settingsMap = null; }
+
+            settingsMap = L.map(container).setView([lat, lng], 17);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap'
+            }).addTo(settingsMap);
+
+            settingsMarker = L.marker([lat, lng], { draggable: true }).addTo(settingsMap)
+                .bindPopup('Lokasi Klinik').openPopup();
+
+            settingsCircle = L.circle([lat, lng], {
+                radius: radius, color: '#6366F1', fillColor: '#6366F1',
+                fillOpacity: 0.15, weight: 2
+            }).addTo(settingsMap);
+
+            // Allow dragging marker to set new coordinates
+            settingsMarker.on('dragend', (e) => {
+                const pos = e.target.getLatLng();
+                document.getElementById('latitude').value = pos.lat.toFixed(6);
+                document.getElementById('longitude').value = pos.lng.toFixed(6);
+                settingsCircle.setLatLng(pos);
+                updateMapPreview();
+            });
+
+            // Allow clicking on map to reposition marker
+            settingsMap.on('click', (e) => {
+                const pos = e.latlng;
+                settingsMarker.setLatLng(pos);
+                settingsCircle.setLatLng(pos);
+                document.getElementById('latitude').value = pos.lat.toFixed(6);
+                document.getElementById('longitude').value = pos.lng.toFixed(6);
+                updateMapPreview();
+            });
+
+            // Force recalculate map size after DOM render
+            setTimeout(() => settingsMap.invalidateSize(), 300);
+        }
+
+        ['latitude', 'longitude', 'radius'].forEach(id => {
+            document.getElementById(id).addEventListener('input', updateMapPreview);
+        });
+
+        loadSettings();
+
+        async function loadSettings() {
+            try {
+                const settingsRes = await AdminAPI.getSettings();
+                const s = settingsRes.data;
+                document.getElementById('clinicName').value = s.nama_klinik || '';
+                document.getElementById('latitude').value = s.latitude || '';
+                document.getElementById('longitude').value = s.longitude || '';
+                document.getElementById('radius').value = s.batas_radius_meter || 50;
+                document.getElementById('previewLat').textContent = s.latitude || '-';
+                document.getElementById('previewLng').textContent = s.longitude || '-';
+                document.getElementById('previewRadius').textContent = s.batas_radius_meter || 50;
+                initSettingsMap(s.latitude || -6.2, s.longitude || 106.816666, s.batas_radius_meter || 50);
+            } catch (err) {
+                console.error(err);
+                initSettingsMap(-6.2, 106.816666, 50);
+            }
+
+            try {
+                const shiftsRes = await AdminAPI.getShifts();
+                renderShifts(shiftsRes.data || []);
+            } catch (err) { console.error(err); }
+        }
+
+        function renderShifts(shifts) {
+            const container = document.getElementById('shiftList');
+            container.innerHTML = shifts.map((shift, i) => `
+        <div style="background: #F8FAFC; border-radius: 10px; padding: 16px; margin-bottom: ${i < shifts.length - 1 ? '12px' : '0'};">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <h4 style="font-weight: 700; color: #0F172A;">Shift ${shift.nama_shift}</h4>
+            <span class="admin-badge admin-badge-info">Shift ${shift.id_shift}</span>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <div class="admin-form-group" style="margin-bottom: 0;">
+              <label class="admin-form-label">Scan Mulai</label>
+              <input type="time" id="shift${shift.id_shift}_start" class="admin-form-input" value="${shift.batas_jam_mulai_scan}" style="font-size: 0.85rem;">
+            </div>
+            <div class="admin-form-group" style="margin-bottom: 0;">
+              <label class="admin-form-label">Scan Akhir</label>
+              <input type="time" id="shift${shift.id_shift}_end" class="admin-form-input" value="${shift.batas_jam_akhir_scan}" style="font-size: 0.85rem;">
+            </div>
+            <div class="admin-form-group" style="margin-bottom: 0;">
+              <label class="admin-form-label">Jam Masuk Ideal</label>
+              <input type="time" id="shift${shift.id_shift}_masuk" class="admin-form-input" value="${shift.jam_masuk_ideal}" style="font-size: 0.85rem;">
+            </div>
+            <div class="admin-form-group" style="margin-bottom: 0;">
+              <label class="admin-form-label">Jam Pulang Ideal</label>
+              <input type="time" id="shift${shift.id_shift}_pulang" class="admin-form-input" value="${shift.jam_pulang_ideal}" style="font-size: 0.85rem;">
+            </div>
+          </div>
+          <button class="admin-btn admin-btn-primary admin-btn-sm" style="margin-top: 12px; width: 100%;" onclick="saveShift(${shift.id_shift})">
+            Simpan Shift ${shift.nama_shift}
+          </button>
+        </div>
+      `).join('');
+        }
+
+        async function saveLocation() {
+            try {
+                await AdminAPI.updateSettings({
+                    nama_klinik: document.getElementById('clinicName').value,
+                    latitude: parseFloat(document.getElementById('latitude').value),
+                    longitude: parseFloat(document.getElementById('longitude').value),
+                    batas_radius_meter: parseInt(document.getElementById('radius').value)
+                });
+                AdminApp.showToast('Pengaturan lokasi berhasil disimpan', 'success');
+            } catch (err) {
+                AdminApp.showToast(err.message, 'error');
+            }
+        }
+
+        async function saveShift(id) {
+            try {
+                await AdminAPI.updateShift(id, {
+                    batas_jam_mulai_scan: document.getElementById(`shift${id}_start`).value,
+                    batas_jam_akhir_scan: document.getElementById(`shift${id}_end`).value,
+                    jam_masuk_ideal: document.getElementById(`shift${id}_masuk`).value,
+                    jam_pulang_ideal: document.getElementById(`shift${id}_pulang`).value
+                });
+                AdminApp.showToast(`Konfigurasi Shift ${id} berhasil disimpan`, 'success');
+            } catch (err) {
+                AdminApp.showToast(err.message, 'error');
+            }
+        }
+
+        function warnDanger() {
+            if (confirm('PERINGATAN: Tindakan ini akan menghapus seluruh data wajah pegawai. Lanjutkan?')) {
+                AdminApp.showToast('Fitur ini sedang dalam pengembangan', 'info');
+            }
+        }
+    </script>
+</body>
+
+</html>

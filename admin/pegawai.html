@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Kelola Pegawai — Admin Klinik Prima Insani">
+    <title>Pegawai — Admin Klinik Prima Insani</title>
+    <link rel="icon" type="image/png" href="../shared/assets/logo.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="css/admin.css">
+</head>
+
+<body>
+    <div id="sidebarContainer"></div>
+
+    <div class="main-content">
+        <div id="topBarContainer"></div>
+
+        <div class="page-container">
+            <!-- Actions Bar -->
+            <div
+                style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 12px;">
+                <div class="search-bar">
+                    <span>🔍</span>
+                    <input type="text" id="searchInput" placeholder="Cari pegawai..." oninput="filterEmployees()">
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <button class="admin-btn admin-btn-outline"
+                        onclick="AdminApp.showToast('Fitur bulk import akan tersedia setelah backend siap', 'info')">
+                        📂 Import CSV
+                    </button>
+                    <button class="admin-btn admin-btn-primary" onclick="AdminApp.openModal('addEmployeeModal')">
+                        ➕ Tambah Pegawai
+                    </button>
+                </div>
+            </div>
+
+            <!-- Employee Table -->
+            <div class="panel">
+                <div class="panel-header">
+                    <h3 class="panel-title">Daftar Pegawai</h3>
+                    <span style="color: #94A3B8; font-size: 0.8rem;" id="employeeCount">0 pegawai</span>
+                </div>
+                <div class="panel-body-flush">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Nama</th>
+                                <th>Username</th>
+                                <th>Status Wajah</th>
+                                <th>Status</th>
+                                <th>Terdaftar</th>
+                                <th>Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="employeeTableBody">
+                            <!-- Filled by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Employee Modal -->
+    <div class="modal-overlay" id="addEmployeeModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Tambah Pegawai Baru</h3>
+                <button class="modal-close" onclick="AdminApp.closeModal('addEmployeeModal')">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="admin-form-group">
+                    <label class="admin-form-label">Nama Lengkap</label>
+                    <input type="text" id="newEmpName" class="admin-form-input" placeholder="Masukkan nama lengkap">
+                </div>
+                <div class="admin-form-group">
+                    <label class="admin-form-label">Username</label>
+                    <input type="text" id="newEmpUsername" class="admin-form-input" placeholder="Masukkan username">
+                </div>
+                <div class="admin-form-group" style="margin-bottom: 0;">
+                    <label class="admin-form-label">Password</label>
+                    <input type="password" id="newEmpPassword" class="admin-form-input" placeholder="Masukkan password">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="admin-btn admin-btn-outline"
+                    onclick="AdminApp.closeModal('addEmployeeModal')">Batal</button>
+                <button class="admin-btn admin-btn-primary" onclick="addEmployee()">Simpan</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Reset Face Modal -->
+    <div class="modal-overlay" id="resetFaceModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Reset Wajah Pegawai</h3>
+                <button class="modal-close" onclick="AdminApp.closeModal('resetFaceModal')">✕</button>
+            </div>
+            <div class="modal-body" style="text-align: center;">
+                <div style="font-size: 3rem; margin-bottom: 16px;">⚠️</div>
+                <p style="color: #334155; margin-bottom: 8px;">Apakah Anda yakin ingin mereset data wajah?</p>
+                <p style="color: #64748B; font-size: 0.85rem;" id="resetFaceName">-</p>
+                <p style="color: #94A3B8; font-size: 0.8rem; margin-top: 12px;">
+                    Pegawai perlu melakukan registrasi wajah ulang setelah reset.
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button class="admin-btn admin-btn-outline"
+                    onclick="AdminApp.closeModal('resetFaceModal')">Batal</button>
+                <button class="admin-btn admin-btn-danger" onclick="confirmResetFace()"
+                    style="background: #EF4444; color: white;">Reset Wajah</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script src="js/admin-app.js"></script>
+    <script>
+        if (!AdminAPI.isAuthenticated()) { window.location.href = 'login.html'; }
+
+        document.getElementById('sidebarContainer').innerHTML = AdminApp.renderSidebar('pegawai');
+        document.getElementById('topBarContainer').innerHTML = AdminApp.renderTopBar('Kelola Pegawai');
+
+        let employees = [];
+        let resetTargetId = null;
+
+        loadEmployees();
+
+        async function loadEmployees() {
+            try {
+                const result = await AdminAPI.getPegawai();
+                employees = result.data || [];
+                renderEmployeeTable(employees);
+            } catch (err) {
+                AdminApp.showToast(err.message, 'error');
+            }
+        }
+
+        function renderEmployeeTable(data) {
+            const tbody = document.getElementById('employeeTableBody');
+            document.getElementById('employeeCount').textContent = `${data.length} pegawai`;
+
+            tbody.innerHTML = data.map(emp => {
+                const initials = AdminApp.getInitials(emp.nama_lengkap);
+                const faceStatusBadge = emp.status_wajah
+                    ? '<span class="admin-badge admin-badge-success">Terdaftar ✓</span>'
+                    : '<span class="admin-badge admin-badge-warning">Belum</span>';
+                const activeBadge = emp.is_active
+                    ? '<span class="admin-badge admin-badge-success">Aktif</span>'
+                    : '<span class="admin-badge admin-badge-default">Nonaktif</span>';
+
+                return `
+          <tr>
+            <td>
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <div style="width: 34px; height: 34px; border-radius: 50%; background: linear-gradient(135deg, #0D9488, #14B8A6); 
+                  display: flex; align-items: center; justify-content: center; color: white; font-size: 0.75rem; font-weight: 700;">
+                  ${initials}
+                </div>
+                <span style="font-weight: 600;">${emp.nama_lengkap}</span>
+              </div>
+            </td>
+            <td style="color: #64748B;">${emp.username}</td>
+            <td>${faceStatusBadge}</td>
+            <td>${activeBadge}</td>
+            <td style="color: #64748B;">${AdminApp.formatDate(emp.created_at)}</td>
+            <td>
+              <div style="display: flex; gap: 6px;">
+                ${emp.status_wajah ? `<button class="admin-btn admin-btn-danger admin-btn-sm" onclick="openResetFace('${emp.id_pegawai}', '${emp.nama_lengkap}')">🔄 Reset</button>` : ''}
+                <button class="admin-btn admin-btn-outline admin-btn-sm" onclick="toggleActive('${emp.id_pegawai}')">${emp.is_active ? 'Nonaktifkan' : 'Aktifkan'}</button>
+              </div>
+            </td>
+          </tr>
+        `;
+            }).join('');
+        }
+
+        function filterEmployees() {
+            const query = document.getElementById('searchInput').value.toLowerCase();
+            const filtered = employees.filter(e =>
+                e.nama_lengkap.toLowerCase().includes(query) ||
+                e.username.toLowerCase().includes(query)
+            );
+            renderEmployeeTable(filtered);
+        }
+
+        async function addEmployee() {
+            const name = document.getElementById('newEmpName').value.trim();
+            const username = document.getElementById('newEmpUsername').value.trim();
+            const password = document.getElementById('newEmpPassword').value;
+
+            if (!name || !username || !password) {
+                AdminApp.showToast('Semua field wajib diisi', 'error');
+                return;
+            }
+
+            try {
+                await AdminAPI.createPegawai({ nama_lengkap: name, username, password });
+                AdminApp.closeModal('addEmployeeModal');
+                AdminApp.showToast(`Pegawai "${name}" berhasil ditambahkan`, 'success');
+                document.getElementById('newEmpName').value = '';
+                document.getElementById('newEmpUsername').value = '';
+                document.getElementById('newEmpPassword').value = '';
+                await loadEmployees();
+            } catch (err) {
+                AdminApp.showToast(err.message, 'error');
+            }
+        }
+
+        function openResetFace(id, name) {
+            resetTargetId = id;
+            document.getElementById('resetFaceName').textContent = name;
+            AdminApp.openModal('resetFaceModal');
+        }
+
+        async function confirmResetFace() {
+            try {
+                await AdminAPI.resetFace(resetTargetId);
+                AdminApp.showToast('Wajah berhasil direset', 'success');
+                AdminApp.closeModal('resetFaceModal');
+                await loadEmployees();
+            } catch (err) {
+                AdminApp.showToast(err.message, 'error');
+            }
+        }
+
+        async function toggleActive(id) {
+            const emp = employees.find(e => e.id_pegawai === id);
+            if (!emp) return;
+            try {
+                await AdminAPI.updatePegawai(id, { is_active: !emp.is_active });
+                AdminApp.showToast(`Status "${emp.nama_lengkap}" diubah`, 'success');
+                await loadEmployees();
+            } catch (err) {
+                AdminApp.showToast(err.message, 'error');
+            }
+        }
+    </script>
+</body>
+
+</html>

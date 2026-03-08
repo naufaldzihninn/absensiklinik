@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#0F172A">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="description" content="Absensi — Klinik Prima Insani">
+    <title>Absensi — Klinik Prima Insani</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/png" href="../shared/assets/logo.png">
+    <link rel="apple-touch-icon" href="../shared/assets/logo.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+
+    <!-- Camera Screen -->
+    <div class="camera-container" id="cameraScreen">
+        <video id="cameraFeed" class="camera-video" autoplay playsinline></video>
+
+        <div class="camera-overlay">
+            <div class="face-guide"></div>
+            <p class="camera-guide-text" id="cameraGuideText">Posisikan wajah Anda di dalam lingkaran</p>
+        </div>
+
+        <div class="camera-header">
+            <button class="camera-close-btn" onclick="goBack()">←</button>
+            <span style="color: white; font-size: 0.85rem; font-weight: 600;" id="absenTypeLabel">Clock In</span>
+            <div style="width: 40px;"></div>
+        </div>
+
+        <div class="camera-controls">
+            <button class="capture-btn" id="captureBtn" onclick="captureAndVerify()"></button>
+        </div>
+    </div>
+
+    <!-- Processing Screen -->
+    <div class="loading-overlay" id="processingScreen" style="display: none;">
+        <div class="spinner" style="width: 48px; height: 48px; border-width: 4px;"></div>
+        <div class="loading-text" id="processingText">Memverifikasi wajah...</div>
+    </div>
+
+    <!-- Result Screen: Success -->
+    <div class="success-screen" id="successScreen" style="display: none;">
+        <div class="success-icon">✓</div>
+        <h2 id="successTitle">Absensi Berhasil!</h2>
+        <p class="text-secondary" style="margin-top: 8px;" id="successDetail"></p>
+
+        <div class="glass-card" style="margin-top: 24px; width: 100%; max-width: 320px;">
+            <div class="flex justify-between mb-sm">
+                <span class="text-secondary text-sm">Shift</span>
+                <span class="text-sm" style="font-weight: 600;" id="resultShift">-</span>
+            </div>
+            <div class="flex justify-between mb-sm">
+                <span class="text-secondary text-sm">Waktu</span>
+                <span class="text-sm" style="font-weight: 600;" id="resultTime">-</span>
+            </div>
+            <div class="flex justify-between mb-sm">
+                <span class="text-secondary text-sm">Status</span>
+                <span id="resultStatus">-</span>
+            </div>
+            <div class="flex justify-between">
+                <span class="text-secondary text-sm">Akurasi AI</span>
+                <span class="text-sm" style="font-weight: 600; color: var(--success);" id="resultAkurasi">-</span>
+            </div>
+        </div>
+
+        <button class="btn btn-primary btn-lg" style="margin-top: 24px;" onclick="goToDashboard()">
+            Kembali ke Beranda
+        </button>
+    </div>
+
+    <!-- Result Screen: Failed -->
+    <div class="success-screen" id="failScreen" style="display: none;">
+        <div class="fail-icon">✕</div>
+        <h2>Verifikasi Gagal</h2>
+        <p class="text-secondary" style="margin-top: 8px; max-width: 280px;" id="failDetail">
+            Wajah tidak cocok dengan data terdaftar. Silakan coba lagi.
+        </p>
+        <div style="display: flex; gap: 12px; margin-top: 24px;">
+            <button class="btn btn-secondary" onclick="goToDashboard()">Kembali</button>
+            <button class="btn btn-primary" onclick="retryCapture()">Coba Lagi</button>
+        </div>
+    </div>
+
+    <script src="js/app.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/camera.js"></script>
+    <script src="js/geolocation.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+    <script src="js/face.js"></script>
+    <script>
+        // Auth guard
+        if (!API.isAuthenticated()) {
+            window.location.href = 'login.html';
+        }
+
+        const params = new URLSearchParams(window.location.search);
+        const absenType = params.get('type') || 'masuk';
+        const isMasuk = absenType === 'masuk';
+
+        // Set label
+        document.getElementById('absenTypeLabel').textContent = isMasuk ? 'Clock In' : 'Clock Out';
+
+        // Start camera + load AI models in parallel
+        initCamera();
+
+        async function initCamera() {
+            try {
+                const video = document.getElementById('cameraFeed');
+                await Camera.start(video);
+
+                // Load face AI models in background
+                waitForFaceApi().then(() => {
+                    FaceAI.load((msg) => console.log('[FaceAI]', msg));
+                }).catch(err => console.warn('Model load:', err.message));
+            } catch (err) {
+                App.showToast(err.message, 'error');
+                setTimeout(() => goBack(), 2000);
+            }
+        }
+
+        function waitForFaceApi() {
+            return new Promise((resolve, reject) => {
+                if (typeof faceapi !== 'undefined') return resolve();
+                const check = setInterval(() => {
+                    if (typeof faceapi !== 'undefined') { clearInterval(check); resolve(); }
+                }, 200);
+                setTimeout(() => { clearInterval(check); reject(new Error('face-api timeout')); }, 15000);
+            });
+        }
+
+        async function captureAndVerify() {
+            try {
+                // 1. Ensure models are loaded
+                if (!FaceAI.isReady()) {
+                    App.showToast('Memuat model AI, tunggu sebentar...', 'info');
+                    await waitForFaceApi();
+                    await FaceAI.load();
+                }
+
+                // 2. Detect face from live video BEFORE stopping camera
+                const video = document.getElementById('cameraFeed');
+                document.getElementById('processingText').textContent = 'Mendeteksi wajah...';
+
+                const faceResult = await FaceAI.detectFromVideo(video);
+
+                // Stop camera after detection
+                Camera.stop();
+
+                // Show processing screen
+                document.getElementById('cameraScreen').style.display = 'none';
+                document.getElementById('processingScreen').style.display = 'flex';
+
+                if (!faceResult) {
+                    showFailResult('Wajah tidak terdeteksi. Pastikan wajah terlihat jelas dan pencahayaan cukup.');
+                    return;
+                }
+
+                // 3. Send descriptor to backend for matching
+                document.getElementById('processingText').textContent = 'Membandingkan data biometrik...';
+                const matchResult = await API.matchFace(faceResult.descriptor);
+
+                if (!matchResult.match) {
+                    const scorePercent = (matchResult.score * 100).toFixed(1);
+                    showFailResult(`Verifikasi wajah gagal (kecocokan: ${scorePercent}%). Wajah tidak sesuai dengan data terdaftar.`);
+                    return;
+                }
+
+                // 4. Face matched! Proceed with clock-in/out
+                document.getElementById('processingText').textContent = 'Menyimpan data absensi...';
+
+                // Get GPS position
+                let gps = { latitude: -6.2, longitude: 106.816666 };
+                try {
+                    const pos = await Geolocation.getCurrentPosition();
+                    gps = { latitude: pos.latitude, longitude: pos.longitude };
+                } catch (e) { /* use default */ }
+
+                const akurasi = matchResult.score;
+                const result = isMasuk
+                    ? await API.clockIn(gps.latitude, gps.longitude, akurasi)
+                    : await API.clockOut(gps.latitude, gps.longitude, akurasi);
+
+                showSuccessResult(result, akurasi);
+
+            } catch (err) {
+                showFailResult(err.message);
+            }
+        }
+
+        function showSuccessResult(result, akurasi) {
+            const record = result.data;
+
+            document.getElementById('successTitle').textContent =
+                isMasuk ? 'Clock In Berhasil! ✅' : 'Clock Out Berhasil! ✅';
+            document.getElementById('successDetail').textContent =
+                isMasuk ? 'Selamat bekerja, semoga harimu menyenangkan!' : 'Terima kasih, selamat beristirahat!';
+
+            document.getElementById('resultShift').textContent = result.shift ? `Shift ${result.shift}` : '-';
+            document.getElementById('resultTime').textContent = App.formatTime(record.waktu_absen);
+
+            const statusEl = document.getElementById('resultStatus');
+            if (isMasuk) {
+                const status = record.status_kehadiran || result.status;
+                if (status === 'Terlambat') {
+                    statusEl.innerHTML = '<span class="badge badge-warning">Terlambat</span>';
+                } else {
+                    statusEl.innerHTML = '<span class="badge badge-success">Tepat Waktu</span>';
+                }
+            } else {
+                statusEl.innerHTML = '<span class="badge badge-success">Selesai</span>';
+            }
+
+            document.getElementById('resultAkurasi').textContent =
+                `${((akurasi || record.akurasi_wajah || 0) * 100).toFixed(1)}%`;
+
+            document.getElementById('processingScreen').style.display = 'none';
+            document.getElementById('successScreen').style.display = 'flex';
+        }
+
+        function showFailResult(message) {
+            document.getElementById('failDetail').textContent =
+                message || 'Wajah tidak cocok dengan data terdaftar. Silakan coba lagi.';
+            document.getElementById('processingScreen').style.display = 'none';
+            document.getElementById('failScreen').style.display = 'flex';
+        }
+
+        function retryCapture() {
+            document.getElementById('failScreen').style.display = 'none';
+            document.getElementById('successScreen').style.display = 'none';
+            document.getElementById('processingScreen').style.display = 'none';
+            document.getElementById('cameraScreen').style.display = 'flex';
+            initCamera();
+        }
+
+        function goBack() {
+            Camera.stop();
+            window.location.href = 'index.html';
+        }
+
+        function goToDashboard() {
+            window.location.href = 'index.html';
+        }
+    </script>
+</body>
+
+</html>

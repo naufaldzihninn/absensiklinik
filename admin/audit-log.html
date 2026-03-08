@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Audit Log — Admin Klinik Prima Insani">
+    <title>Audit Log — Admin Klinik Prima Insani</title>
+    <link rel="icon" type="image/png" href="../shared/assets/logo.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="css/admin.css">
+</head>
+
+<body>
+    <div id="sidebarContainer"></div>
+
+    <div class="main-content">
+        <div id="topBarContainer"></div>
+
+        <div class="page-container">
+            <!-- Filters -->
+            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 20px; flex-wrap: wrap;">
+                <select id="actionFilter" class="filter-select" onchange="filterLogs()">
+                    <option value="">Semua Aksi</option>
+                    <option value="CREATE_PEGAWAI">Tambah Pegawai</option>
+                    <option value="RESET_WAJAH">Reset Wajah</option>
+                    <option value="UPDATE_SETTING">Update Setting</option>
+                    <option value="DEACTIVATE_PEGAWAI">Nonaktifkan Pegawai</option>
+                </select>
+            </div>
+
+            <!-- Audit Log Table -->
+            <div class="panel">
+                <div class="panel-header">
+                    <h3 class="panel-title">📝 Log Aktivitas Admin</h3>
+                    <span style="color: #94A3B8; font-size: 0.8rem;" id="logCount">0 catatan</span>
+                </div>
+                <div class="panel-body-flush">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Waktu</th>
+                                <th>Admin</th>
+                                <th>Aksi</th>
+                                <th>Detail</th>
+                            </tr>
+                        </thead>
+                        <tbody id="auditLogBody">
+                            <!-- Filled by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script src="js/admin-app.js"></script>
+    <script>
+        if (!AdminAPI.isAuthenticated()) { window.location.href = 'login.html'; }
+
+        document.getElementById('sidebarContainer').innerHTML = AdminApp.renderSidebar('audit-log');
+        document.getElementById('topBarContainer').innerHTML = AdminApp.renderTopBar('Audit Log');
+
+        let allLogs = [];
+        loadLogs();
+
+        async function loadLogs() {
+            try {
+                const result = await AdminAPI.getAuditLog();
+                allLogs = result.data || [];
+                renderLogs(allLogs);
+            } catch (err) {
+                console.error('Load audit log error:', err);
+            }
+        }
+
+        function filterLogs() {
+            const action = document.getElementById('actionFilter').value;
+            const filtered = action ? allLogs.filter(l => l.aksi === action) : allLogs;
+            renderLogs(filtered);
+        }
+
+        function renderLogs(data) {
+            document.getElementById('logCount').textContent = `${data.length} catatan`;
+            const tbody = document.getElementById('auditLogBody');
+
+            const actionLabels = {
+                'CREATE_PEGAWAI': { label: 'Tambah Pegawai', class: 'admin-badge-success' },
+                'RESET_WAJAH': { label: 'Reset Wajah', class: 'admin-badge-warning' },
+                'UPDATE_SETTING': { label: 'Update Setting', class: 'admin-badge-info' },
+                'UPDATE_SHIFT': { label: 'Update Shift', class: 'admin-badge-info' },
+                'UPDATE_PEGAWAI': { label: 'Update Pegawai', class: 'admin-badge-info' },
+                'ACTIVATE_PEGAWAI': { label: 'Aktifkan', class: 'admin-badge-success' },
+                'DEACTIVATE_PEGAWAI': { label: 'Nonaktifkan', class: 'admin-badge-danger' }
+            };
+
+            tbody.innerHTML = data.map(log => {
+                const action = actionLabels[log.aksi] || { label: log.aksi, class: 'admin-badge-default' };
+                const detail = typeof log.detail === 'object' ? JSON.stringify(log.detail) : (log.detail || '-');
+                return `
+          <tr>
+            <td style="white-space: nowrap; color: #64748B;">${AdminApp.formatDateTime(log.created_at)}</td>
+            <td style="font-weight: 600;">${log.admin_name || '-'}</td>
+            <td><span class="admin-badge ${action.class}">${action.label}</span></td>
+            <td style="color: #334155; max-width: 300px; overflow: hidden; text-overflow: ellipsis;">${detail}</td>
+          </tr>
+        `;
+            }).join('');
+        }
+    </script>
+</body>
+
+</html>

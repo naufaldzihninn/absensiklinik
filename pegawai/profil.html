@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#0F172A">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="description" content="Profil Pegawai — Klinik Prima Insani">
+    <title>Profil — Absensi Klinik Prima Insani</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/png" href="../shared/assets/logo.png">
+    <link rel="apple-touch-icon" href="../shared/assets/logo.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+    <div class="app-container">
+        <div class="page-content">
+
+            <!-- Profile Header -->
+            <div class="profile-header">
+                <div class="profile-avatar">
+                    <img id="profilePhoto" src="../shared/assets/logo.png" alt="Foto Profil">
+                </div>
+                <h2 class="profile-name" id="profileName">...</h2>
+                <p class="profile-role" id="profileRole">Pegawai</p>
+            </div>
+
+            <!-- Monthly Stats -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value success" id="statHadir">0</div>
+                    <div class="stat-label">Hadir</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value warning" id="statTelat">0</div>
+                    <div class="stat-label">Terlambat</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value danger" id="statAlpa">0</div>
+                    <div class="stat-label">Alpa</div>
+                </div>
+            </div>
+            <p class="text-center text-muted text-xs" style="margin-top: -8px; margin-bottom: 20px;">
+                Statistik bulan ini
+            </p>
+
+            <div class="divider"></div>
+
+            <!-- Info Section -->
+            <div class="glass-card" style="margin-bottom: 16px;">
+                <h4 style="margin-bottom: 16px;">Informasi Akun</h4>
+                <div class="flex justify-between mb-md">
+                    <span class="text-secondary text-sm">Username</span>
+                    <span class="text-sm" style="font-weight: 600;" id="infoUsername">-</span>
+                </div>
+                <div class="flex justify-between mb-md">
+                    <span class="text-secondary text-sm">Nama Lengkap</span>
+                    <span class="text-sm" style="font-weight: 600;" id="infoNama">-</span>
+                </div>
+                <div class="flex justify-between mb-md">
+                    <span class="text-secondary text-sm">Status Wajah</span>
+                    <span id="infoFaceStatus">
+                        <span class="badge badge-success">Terdaftar</span>
+                    </span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-secondary text-sm">Role</span>
+                    <span class="text-sm" style="font-weight: 600;" id="infoRole">-</span>
+                </div>
+            </div>
+
+            <!-- Menu Items -->
+            <div class="glass-card" style="padding: 8px;">
+                <ul class="menu-list">
+                    <li>
+                        <a href="riwayat.html" class="menu-item">
+                            <span class="menu-item-icon">📋</span>
+                            <span class="menu-item-text">Riwayat Absensi</span>
+                            <span class="menu-item-arrow">›</span>
+                        </a>
+                    </li>
+                    <li>
+                        <div class="menu-item" onclick="resetFace()" style="cursor: pointer;">
+                            <span class="menu-item-icon">🔄</span>
+                            <span class="menu-item-text">Daftarkan Ulang Wajah</span>
+                            <span class="menu-item-arrow">›</span>
+                        </div>
+                    </li>
+                    <li>
+                        <div class="menu-item danger" onclick="handleLogout()" style="cursor: pointer;">
+                            <span class="menu-item-icon" style="background: var(--danger-bg);">🚪</span>
+                            <span class="menu-item-text">Keluar</span>
+                            <span class="menu-item-arrow">›</span>
+                        </div>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- App Version -->
+            <p class="text-center text-muted text-xs" style="margin-top: 24px;">
+                Absensi Klinik Prima Insani v1.0.0
+            </p>
+
+        </div>
+
+        <!-- Bottom Navigation -->
+        <nav class="bottom-nav">
+            <a href="index.html" class="nav-item" data-page="home">
+                <span class="nav-icon">🏠</span>
+                Beranda
+            </a>
+            <a href="riwayat.html" class="nav-item" data-page="riwayat">
+                <span class="nav-icon">📋</span>
+                Riwayat
+            </a>
+            <a href="profil.html" class="nav-item active" data-page="profil">
+                <span class="nav-icon">👤</span>
+                Profil
+            </a>
+        </nav>
+    </div>
+
+    <!-- Logout Confirmation Modal -->
+    <div id="logoutModal" style="display: none; position: fixed; inset: 0; background: rgba(2,6,23,0.85); z-index: 400; 
+    display: none; align-items: center; justify-content: center; padding: 24px; backdrop-filter: blur(4px);">
+        <div class="glass-card" style="width: 100%; max-width: 340px; text-align: center;">
+            <div style="font-size: 2.5rem; margin-bottom: 12px;">🚪</div>
+            <h3>Keluar dari Akun?</h3>
+            <p class="text-secondary text-sm" style="margin: 8px 0 20px;">
+                Anda perlu login kembali untuk menggunakan aplikasi.
+            </p>
+            <div style="display: flex; gap: 12px;">
+                <button class="btn btn-secondary" style="flex: 1;" onclick="closeLogoutModal()">Batal</button>
+                <button class="btn btn-danger" style="flex: 1;" onclick="confirmLogout()">Keluar</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/app.js"></script>
+    <script src="js/api.js"></script>
+    <script>
+        if (!API.isAuthenticated()) { window.location.href = 'login.html'; }
+
+        App.setActiveNav('profil');
+        initProfile();
+
+        async function initProfile() {
+            const session = API.getSession();
+
+            document.getElementById('profileName').textContent = session?.nama_lengkap || '...';
+            document.getElementById('profileRole').textContent = session?.role === 'admin' ? 'Administrator' : 'Pegawai';
+            document.getElementById('infoUsername').textContent = session?.username || '-';
+            document.getElementById('infoNama').textContent = session?.nama_lengkap || '-';
+            document.getElementById('infoRole').textContent = session?.role === 'admin' ? 'Administrator' : 'Pegawai';
+
+            // Face status
+            const faceStatusEl = document.getElementById('infoFaceStatus');
+            if (session?.has_vektor || session?.status_wajah) {
+                faceStatusEl.innerHTML = '<span class="badge badge-success">Terdaftar ✓</span>';
+            } else {
+                faceStatusEl.innerHTML = '<span class="badge badge-warning">Belum Terdaftar</span>';
+            }
+
+            // Monthly stats from API
+            try {
+                const result = await API.getHistory(30);
+                const records = result.data || [];
+                const now = new Date();
+                const monthRecords = records.filter(r => {
+                    const d = new Date(r.waktu_absen);
+                    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+                });
+                const clockIns = monthRecords.filter(r => r.tipe_absen === 'MASUK');
+                document.getElementById('statHadir').textContent = clockIns.length;
+                document.getElementById('statTelat').textContent = clockIns.filter(r => r.status_kehadiran === 'Terlambat').length;
+                document.getElementById('statAlpa').textContent = 0;
+            } catch (err) {
+                console.error('Stats error:', err);
+            }
+        }
+
+        function resetFace() {
+            if (confirm('Apakah Anda yakin ingin mendaftarkan ulang wajah?')) {
+                App.showToast('Fitur reset wajah akan tersedia setelah face-api.js terintegrasi', 'info');
+            }
+        }
+
+        function handleLogout() {
+            document.getElementById('logoutModal').style.display = 'flex';
+        }
+
+        function closeLogoutModal() {
+            document.getElementById('logoutModal').style.display = 'none';
+        }
+
+        function confirmLogout() {
+            API.logout();
+        }
+    </script>
+</body>
+
+</html>

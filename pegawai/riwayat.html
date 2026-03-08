@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#0F172A">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="description" content="Riwayat Absensi — Klinik Prima Insani">
+    <title>Riwayat — Absensi Klinik Prima Insani</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/png" href="../shared/assets/logo.png">
+    <link rel="apple-touch-icon" href="../shared/assets/logo.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+    <div class="app-container">
+        <div class="page-content">
+
+            <!-- Header -->
+            <h2 style="margin-bottom: 20px;">📋 Riwayat Absensi</h2>
+
+            <!-- Month Selector -->
+            <div class="month-selector">
+                <button class="month-nav-btn" id="prevMonth" onclick="changeMonth(-1)">‹</button>
+                <span class="month-label" id="monthLabel">Maret 2026</span>
+                <button class="month-nav-btn" id="nextMonth" onclick="changeMonth(1)">›</button>
+            </div>
+
+            <!-- Monthly Stats -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value success" id="statHadir">0</div>
+                    <div class="stat-label">Hadir</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value warning" id="statTelat">0</div>
+                    <div class="stat-label">Terlambat</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value danger" id="statAlpa">0</div>
+                    <div class="stat-label">Alpa</div>
+                </div>
+            </div>
+
+            <!-- Attendance Records -->
+            <div id="attendanceList" style="margin-top: 20px;">
+                <!-- Filled by JS -->
+            </div>
+
+        </div>
+
+        <!-- Bottom Navigation -->
+        <nav class="bottom-nav">
+            <a href="index.html" class="nav-item" data-page="home">
+                <span class="nav-icon">🏠</span>
+                Beranda
+            </a>
+            <a href="riwayat.html" class="nav-item active" data-page="riwayat">
+                <span class="nav-icon">📋</span>
+                Riwayat
+            </a>
+            <a href="profil.html" class="nav-item" data-page="profil">
+                <span class="nav-icon">👤</span>
+                Profil
+            </a>
+        </nav>
+    </div>
+
+    <script src="js/app.js"></script>
+    <script src="js/api.js"></script>
+    <script>
+        // Auth guard
+        if (!API.isAuthenticated()) { window.location.href = 'login.html'; }
+
+        const months = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+            'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+
+        let currentYear = new Date().getFullYear();
+        let currentMonth = new Date().getMonth();
+        let allRecords = [];
+
+        App.setActiveNav('riwayat');
+        loadAllHistory();
+
+        async function loadAllHistory() {
+            try {
+                const result = await API.getHistory(365);
+                allRecords = result.data || [];
+                renderMonth();
+            } catch (err) {
+                console.error('Load history error:', err);
+                allRecords = [];
+                renderMonth();
+            }
+        }
+
+        function changeMonth(delta) {
+            currentMonth += delta;
+            if (currentMonth > 11) { currentMonth = 0; currentYear++; }
+            else if (currentMonth < 0) { currentMonth = 11; currentYear--; }
+
+            const now = new Date();
+            if (currentYear > now.getFullYear() ||
+                (currentYear === now.getFullYear() && currentMonth > now.getMonth())) {
+                currentMonth = now.getMonth(); currentYear = now.getFullYear(); return;
+            }
+            renderMonth();
+        }
+
+        function renderMonth() {
+            document.getElementById('monthLabel').textContent = `${months[currentMonth]} ${currentYear}`;
+
+            // Filter records for this month
+            const monthRecords = allRecords.filter(r => {
+                const d = new Date(r.waktu_absen);
+                return d.getFullYear() === currentYear && d.getMonth() === currentMonth;
+            });
+
+            // Calculate stats
+            const clockIns = monthRecords.filter(r => r.tipe_absen === 'MASUK');
+            const hadir = clockIns.length;
+            const telat = clockIns.filter(r => r.status_kehadiran === 'Terlambat').length;
+            document.getElementById('statHadir').textContent = hadir;
+            document.getElementById('statTelat').textContent = telat;
+            document.getElementById('statAlpa').textContent = 0; // Can be calculated with shift schedule
+
+            // Group by date
+            const groupedByDate = {};
+            monthRecords.forEach(r => {
+                const dateKey = new Date(r.waktu_absen).toISOString().split('T')[0];
+                if (!groupedByDate[dateKey]) groupedByDate[dateKey] = [];
+                groupedByDate[dateKey].push(r);
+            });
+
+            const sortedDates = Object.keys(groupedByDate).sort().reverse();
+            const container = document.getElementById('attendanceList');
+
+            if (sortedDates.length === 0) {
+                container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📋</div><p class="empty-state-text">Tidak ada data absensi bulan ini</p></div>`;
+                return;
+            }
+
+            container.innerHTML = sortedDates.map(dateKey => {
+                const dayRecords = groupedByDate[dateKey];
+                const clockIn = dayRecords.find(r => r.tipe_absen === 'MASUK');
+                const clockOut = dayRecords.find(r => r.tipe_absen === 'PULANG');
+                const dateDisplay = App.formatRecordDate(dateKey + 'T00:00:00');
+                const statusClass = clockIn && clockIn.status_kehadiran === 'Tepat Waktu' ? 'success' : 'warning';
+                const statusText = clockIn ? clockIn.status_kehadiran : '-';
+                const shiftName = clockIn ? (clockIn.nama_shift || '-') : '-';
+
+                return `
+          <div class="glass-card-sm" style="margin-bottom: 10px;">
+            <div class="flex items-center justify-between mb-sm">
+              <span class="text-sm" style="font-weight: 600;">${dateDisplay}</span>
+              <span class="badge badge-${statusClass}">${statusText}</span>
+            </div>
+            <div class="flex items-center justify-between" style="gap: 16px;">
+              <div><div class="text-xs text-muted">Shift</div><div class="text-sm" style="font-weight: 500;">${shiftName}</div></div>
+              <div style="text-align: center;"><div class="text-xs text-muted">Masuk</div><div class="text-sm" style="font-weight: 600; color: var(--success);">${clockIn ? App.formatTime(clockIn.waktu_absen) : '-'}</div></div>
+              <div style="text-align: center;"><div class="text-xs text-muted">Pulang</div><div class="text-sm" style="font-weight: 600; color: var(--info);">${clockOut ? App.formatTime(clockOut.waktu_absen) : '-'}</div></div>
+              <div style="text-align: right;"><div class="text-xs text-muted">AI</div><div class="text-sm" style="font-weight: 600;">${clockIn ? ((clockIn.akurasi_wajah || 0) * 100).toFixed(0) + '%' : '-'}</div></div>
+            </div>
+          </div>
+        `;
+            }).join('');
+        }
+    </script>
+</body>
+
+</html>

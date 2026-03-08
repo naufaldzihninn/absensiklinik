@@ -96,10 +96,15 @@ app.use((err, req, res, next) => {
 });
 
 // ── Start Server ──
-app.listen(PORT, () => {
-    console.log(`\n🏥 Absensi API Server running on port ${PORT}`);
-    console.log(`   PWA:    http://localhost:${PORT}/pegawai/login.html`);
-    console.log(`   Admin:  http://localhost:${PORT}/admin/login.html`);
-    console.log(`   Health: http://localhost:${PORT}/api/health`);
-    console.log(`   Env: ${process.env.NODE_ENV || 'development'}\n`);
-});
+if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+    app.listen(PORT, () => {
+        console.log(`\n🏥 Absensi API Server running on port ${PORT}`);
+        console.log(`   PWA:    http://localhost:${PORT}/pegawai/login.html`);
+        console.log(`   Admin:  http://localhost:${PORT}/admin/login.html`);
+        console.log(`   Health: http://localhost:${PORT}/api/health`);
+        console.log(`   Env: ${process.env.NODE_ENV || 'development'}\n`);
+    });
+}
+
+// Export for serverless (Vercel)
+module.exports = app;

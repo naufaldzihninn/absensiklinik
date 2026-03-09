@@ -95,6 +95,12 @@ const API = (() => {
         return getToken() !== null && getSession() !== null;
     }
 
+    function updateSession(newSessionData) {
+        const currentData = localStorage.getItem('absensi_session');
+        const storage = currentData ? localStorage : sessionStorage;
+        storage.setItem('absensi_session', JSON.stringify(newSessionData));
+    }
+
     // ── Pegawai ──
     function getProfile() {
         return request('/pegawai/me');
@@ -157,7 +163,7 @@ const API = (() => {
     }
 
     return {
-        login, logout, getSession, isAuthenticated, getToken,
+        login, logout, getSession, updateSession, isAuthenticated, getToken,
         getProfile, clockIn, clockOut, getHistory,
         registerFace, matchFace,
         getSettings, getShifts, getServerTime,

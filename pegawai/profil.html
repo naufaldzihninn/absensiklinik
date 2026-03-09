@@ -152,26 +152,25 @@
         initProfile();
 
         async function initProfile() {
-            const session = API.getSession();
+            // Setup UI with cached session first (instant load)
+            const cachedSession = API.getSession();
+            updateProfileUI(cachedSession);
 
-            document.getElementById('profileName').textContent = session?.nama_lengkap || '...';
-            document.getElementById('profileRole').textContent = session?.role === 'admin' ? 'Administrator' : 'Pegawai';
-            document.getElementById('infoUsername').textContent = session?.username || '-';
-            document.getElementById('infoNama').textContent = session?.nama_lengkap || '-';
-            document.getElementById('infoRole').textContent = session?.role === 'admin' ? 'Administrator' : 'Pegawai';
-
-            // Face status
-            const faceStatusEl = document.getElementById('infoFaceStatus');
-            if (session?.has_vektor || session?.status_wajah) {
-                faceStatusEl.innerHTML = '<span class="badge badge-success">Terdaftar ✓</span>';
-            } else {
-                faceStatusEl.innerHTML = '<span class="badge badge-warning">Belum Terdaftar</span>';
-            }
-
-            // Monthly stats from API
             try {
-                const result = await API.getHistory(30);
-                const records = result.data || [];
+                // Fetch fresh data from backend
+                const result = await API.getProfile();
+                const user = result.data;
+
+                // Merge fresh data with session to keep has_vektor flag updated
+                if (user) {
+                    const freshSession = { ...cachedSession, ...user, has_vektor: user.status_wajah };
+                    API.updateSession(freshSession);
+                    updateProfileUI(freshSession);
+                }
+
+                // Monthly stats from API
+                const statsResult = await API.getHistory(30);
+                const records = statsResult.data || [];
                 const now = new Date();
                 const monthRecords = records.filter(r => {
                     const d = new Date(r.waktu_absen);
@@ -182,8 +181,26 @@
                 document.getElementById('statTelat').textContent = clockIns.filter(r => r.status_kehadiran === 'Terlambat').length;
                 document.getElementById('statAlpa').textContent = 0;
             } catch (err) {
-                console.error('Stats error:', err);
+                console.error('Profile init error:', err);
             }
+        }
+
+        function updateProfileUI(session) {
+            if (!session) return;
+            document.getElementById('profileName').textContent = session.nama_lengkap || '...';
+            document.getElementById('profileRole').textContent = session.role === 'admin' ? 'Administrator' : 'Pegawai';
+            document.getElementById('infoUsername').textContent = session.username || '-';
+            document.getElementById('infoNama').textContent = session.nama_lengkap || '-';
+            document.getElementById('infoRole').textContent = session.role === 'admin' ? 'Administrator' : 'Pegawai';
+
+            // Face status
+            const faceStatusEl = document.getElementById('infoFaceStatus');
+            if (session.has_vektor || session.status_wajah) {
+                faceStatusEl.innerHTML = '<span class="badge badge-success">Terdaftar ✓</span>';
+            } else {
+                faceStatusEl.innerHTML = '<span class="badge badge-warning">Belum Terdaftar</span>';
+            }
+        }
         }
 
         function resetFace() {

@@ -187,8 +187,17 @@
         }
 
         function resetFace() {
-            if (confirm('Apakah Anda yakin ingin mendaftarkan ulang wajah?')) {
-                App.showToast('Fitur reset wajah akan tersedia setelah face-api.js terintegrasi', 'info');
+            const session = API.getSession();
+
+            if (session && (session.has_vektor || session.status_wajah)) {
+                // Admin belum reset wajahnya
+                App.showToast('Silakan hubungi Admin klinik untuk mereset data wajah lama Anda terlebih dahulu.', 'warning');
+                return;
+            }
+
+            // Wajah sudah kosong (sudah direset admin)
+            if (confirm('Data wajah Anda saat ini kosong. Lanjut mendaftarkan wajah baru?')) {
+                window.location.href = 'register-face.html';
             }
         }
 

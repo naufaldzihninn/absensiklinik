@@ -12,10 +12,7 @@ function getHolidays(year = new Date().getFullYear()) {
     // Fixed holidays (same date every year)
     const fixed = [
         { month: 1, day: 1, name: 'Tahun Baru Masehi' },
-        { month: 2, day: 1, name: 'Tahun Baru Imlek' },
-        { month: 3, day: 29, name: 'Hari Raya Nyepi' },
         { month: 5, day: 1, name: 'Hari Buruh Internasional' },
-        { month: 5, day: 29, name: 'Hari Kenaikan Yesus Kristus' },
         { month: 6, day: 1, name: 'Hari Lahir Pancasila' },
         { month: 8, day: 17, name: 'Hari Kemerdekaan RI' },
         { month: 12, day: 25, name: 'Hari Natal' },
@@ -31,9 +28,13 @@ function getHolidays(year = new Date().getFullYear()) {
         { month: 8, day: 26, name: 'Maulid Nabi Muhammad SAW' },
     ];
 
-    // Buddhist & Hindu holidays (approximate for 2026)
+    // Buddhist & Hindu holidays + floating Christian holidays (update annually)
     const other2026 = [
-        { month: 5, day: 12, name: 'Hari Raya Waisak' },
+        { month: 2, day: 1, name: 'Tahun Baru Imlek' },    // 2026: 17 Feb → fixed separately per year
+        { month: 3, day: 19, name: 'Hari Raya Nyepi' },    // 2026: 19 Mar (Saka 1948)
+        { month: 5, day: 12, name: 'Hari Raya Waisak' },   // 2026: 12 Mei
+        { month: 5, day: 14, name: 'Kenaikan Yesus Kristus' }, // 2026: 14 Mei
+        { month: 12, day: 26, name: 'Hari Raya Natal ke-2' },
     ];
 
     // Cuti Bersama (joint leave, update annually)

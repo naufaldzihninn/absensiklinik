@@ -10,8 +10,18 @@ const { verifyToken, requireRole } = require('../middleware/auth');
 // All routes require authentication
 router.use(verifyToken);
 
+// WIB = UTC+7
+const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
+
 /**
- * Detect shift based on current hour
+ * Get current time in WIB (UTC+7), regardless of server timezone.
+ */
+function nowWIB() {
+    return new Date(Date.now() + WIB_OFFSET_MS);
+}
+
+/**
+ * Detect shift based on current WIB hour
  * 04:00–11:59 = Shift 1 (Pagi), 12:00-20:00 = Shift 2 (Siang)
  */
 async function detectShift(hour) {
@@ -23,9 +33,11 @@ async function detectShift(hour) {
     if (!shifts || shifts.length === 0) return null;
 
     for (const shift of shifts) {
-        const start = parseInt(shift.batas_jam_mulai_scan.split(':')[0]);
-        const end = parseInt(shift.batas_jam_akhir_scan.split(':')[0]);
-        if (hour >= start && hour <= end) return shift;
+        const [startH, startM] = shift.batas_jam_mulai_scan.split(':').map(Number);
+        const [endH, endM] = shift.batas_jam_akhir_scan.split(':').map(Number);
+        const startMin = startH * 60 + startM;
+        const endMin = endH * 60 + endM;
+        if (hour >= startMin && hour <= endMin) return shift;
     }
 
     return null;
@@ -61,9 +73,10 @@ router.post('/clock-in', async (req, res) => {
     try {
         const { latitude, longitude, akurasi_wajah = 0 } = req.body;
         const userId = req.user.id_pegawai;
-        const now = new Date();
-        const currentHour = now.getHours();
-        const currentTime = now.toTimeString().slice(0, 8); // HH:MM:SS
+        const now = nowWIB(); // Use WIB time, not UTC server time
+        // currentHour in total minutes from midnight (for precise shift matching)
+        const currentHourMin = now.getUTCHours() * 60 + now.getUTCMinutes();
+        const currentTime = `${String(now.getUTCHours()).padStart(2,'0')}:${String(now.getUTCMinutes()).padStart(2,'0')}:${String(now.getUTCSeconds()).padStart(2,'0')}`;
 
         // 1. Check if user has face registered
         const { data: pegawai } = await supabase
@@ -77,7 +90,7 @@ router.post('/clock-in', async (req, res) => {
         }
 
         // 2. Detect shift
-        const shift = await detectShift(currentHour);
+        const shift = await detectShift(currentHourMin);
         if (!shift) {
             return res.status(400).json({ error: 'Di luar jam operasional shift. Tidak bisa clock-in.' });
         }
@@ -165,13 +178,13 @@ router.post('/clock-out', async (req, res) => {
     try {
         const { latitude, longitude, akurasi_wajah = 0 } = req.body;
         const userId = req.user.id_pegawai;
-        const now = new Date();
+        const now = nowWIB(); // Use WIB time, not UTC server time
 
-        // 1. Find today's clock-in to determine shift
+        // 1. Find today's clock-in to determine shift (WIB date boundaries)
         const todayStart = new Date(now);
-        todayStart.setHours(0, 0, 0, 0);
+        todayStart.setUTCHours(0, 0, 0, 0);
         const todayEnd = new Date(now);
-        todayEnd.setHours(23, 59, 59, 999);
+        todayEnd.setUTCHours(23, 59, 59, 999);
 
         const { data: clockIn } = await supabase
             .from('log_absensi')

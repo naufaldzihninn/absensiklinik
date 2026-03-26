@@ -73,10 +73,11 @@ router.post('/clock-in', async (req, res) => {
     try {
         const { latitude, longitude, akurasi_wajah = 0 } = req.body;
         const userId = req.user.id_pegawai;
-        const now = nowWIB(); // Use WIB time, not UTC server time
-        // currentHour in total minutes from midnight (for precise shift matching)
-        const currentHourMin = now.getUTCHours() * 60 + now.getUTCMinutes();
-        const currentTime = `${String(now.getUTCHours()).padStart(2,'0')}:${String(now.getUTCMinutes()).padStart(2,'0')}:${String(now.getUTCSeconds()).padStart(2,'0')}`;
+        const nowUtc = new Date();          // Real UTC — used for DB storage
+        const nowWib = nowWIB();            // WIB — used for shift/status logic only
+        // Total WIB minutes from midnight for precise shift matching
+        const currentHourMin = nowWib.getUTCHours() * 60 + nowWib.getUTCMinutes();
+        const currentTime = `${String(nowWib.getUTCHours()).padStart(2,'0')}:${String(nowWib.getUTCMinutes()).padStart(2,'0')}:${String(nowWib.getUTCSeconds()).padStart(2,'0')}`;
 
         // 1. Check if user has face registered
         const { data: pegawai } = await supabase
@@ -95,11 +96,12 @@ router.post('/clock-in', async (req, res) => {
             return res.status(400).json({ error: 'Di luar jam operasional shift. Tidak bisa clock-in.' });
         }
 
-        // 3. Check for duplicate clock-in today
-        const todayStart = new Date(now);
-        todayStart.setHours(0, 0, 0, 0);
-        const todayEnd = new Date(now);
-        todayEnd.setHours(23, 59, 59, 999);
+        // 3. Check for duplicate clock-in today (use WIB date boundaries)
+        const todayStartUtc = new Date(nowWib);
+        todayStartUtc.setUTCHours(0, 0, 0, 0);
+        // Convert back: subtract 7h to get actual UTC range start for WIB midnight
+        const todayStartRealUtc = new Date(todayStartUtc.getTime() - WIB_OFFSET_MS);
+        const todayEndRealUtc = new Date(todayStartRealUtc.getTime() + 24 * 60 * 60 * 1000 - 1);
 
         const { data: existing } = await supabase
             .from('log_absensi')
@@ -107,8 +109,8 @@ router.post('/clock-in', async (req, res) => {
             .eq('id_pegawai', userId)
             .eq('tipe_absen', 'MASUK')
             .eq('id_shift', shift.id_shift)
-            .gte('waktu_absen', todayStart.toISOString())
-            .lte('waktu_absen', todayEnd.toISOString())
+            .gte('waktu_absen', todayStartRealUtc.toISOString())
+            .lte('waktu_absen', todayEndRealUtc.toISOString())
             .limit(1);
 
         if (existing && existing.length > 0) {
@@ -146,7 +148,7 @@ router.post('/clock-in', async (req, res) => {
                 id_pegawai: userId,
                 id_shift: shift.id_shift,
                 tipe_absen: 'MASUK',
-                waktu_absen: now.toISOString(),
+                waktu_absen: nowUtc.toISOString(),  // Store real UTC — frontend converts to WIB
                 koordinat_absen: `${latitude}, ${longitude}`,
                 jarak_meter: jarak,
                 status_kehadiran: status,
@@ -178,21 +180,22 @@ router.post('/clock-out', async (req, res) => {
     try {
         const { latitude, longitude, akurasi_wajah = 0 } = req.body;
         const userId = req.user.id_pegawai;
-        const now = nowWIB(); // Use WIB time, not UTC server time
+        const nowUtc = new Date();          // Real UTC — for DB storage
+        const nowWib = nowWIB();            // WIB — for date boundary logic
 
-        // 1. Find today's clock-in to determine shift (WIB date boundaries)
-        const todayStart = new Date(now);
-        todayStart.setUTCHours(0, 0, 0, 0);
-        const todayEnd = new Date(now);
-        todayEnd.setUTCHours(23, 59, 59, 999);
+        // 1. Find today's clock-in to determine shift (WIB date boundaries → real UTC)
+        const todayStartUtc = new Date(nowWib);
+        todayStartUtc.setUTCHours(0, 0, 0, 0);
+        const todayStartRealUtc = new Date(todayStartUtc.getTime() - WIB_OFFSET_MS);
+        const todayEndRealUtc = new Date(todayStartRealUtc.getTime() + 24 * 60 * 60 * 1000 - 1);
 
         const { data: clockIn } = await supabase
             .from('log_absensi')
             .select('id_shift')
             .eq('id_pegawai', userId)
             .eq('tipe_absen', 'MASUK')
-            .gte('waktu_absen', todayStart.toISOString())
-            .lte('waktu_absen', todayEnd.toISOString())
+            .gte('waktu_absen', todayStartRealUtc.toISOString())
+            .lte('waktu_absen', todayEndRealUtc.toISOString())
             .order('waktu_absen', { ascending: false })
             .limit(1)
             .single();
@@ -208,8 +211,8 @@ router.post('/clock-out', async (req, res) => {
             .eq('id_pegawai', userId)
             .eq('tipe_absen', 'PULANG')
             .eq('id_shift', clockIn.id_shift)
-            .gte('waktu_absen', todayStart.toISOString())
-            .lte('waktu_absen', todayEnd.toISOString())
+            .gte('waktu_absen', todayStartRealUtc.toISOString())
+            .lte('waktu_absen', todayEndRealUtc.toISOString())
             .limit(1);
 
         if (existingOut && existingOut.length > 0) {
@@ -238,7 +241,7 @@ router.post('/clock-out', async (req, res) => {
                 id_pegawai: userId,
                 id_shift: clockIn.id_shift,
                 tipe_absen: 'PULANG',
-                waktu_absen: now.toISOString(),
+                waktu_absen: nowUtc.toISOString(),  // Store real UTC
                 koordinat_absen: `${latitude}, ${longitude}`,
                 jarak_meter: jarak,
                 status_kehadiran: '-',

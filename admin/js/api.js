@@ -103,6 +103,7 @@ const AdminAPI = (() => {
     // ── Absensi ──
     function getTodayStats() { return request('/absensi/today'); }
     function getHistory(params = '') { return request(`/absensi/history?${params}`); }
+    function getWeeklyTrend() { return request('/absensi/weekly-trend'); }
 
     // ── Face ──
     function resetFace(id) {
@@ -125,7 +126,7 @@ const AdminAPI = (() => {
     return {
         login, logout, getSession, isAuthenticated,
         getPegawai, createPegawai, updatePegawai, deletePegawai,
-        getTodayStats, getHistory, resetFace,
+        getTodayStats, getHistory, getWeeklyTrend, resetFace,
         getSettings, updateSettings, getShifts, updateShift, getAuditLog,
         getHolidays, checkHoliday,
         request, BASE_URL

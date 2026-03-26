@@ -359,4 +359,65 @@ router.get('/today', requireRole('admin'), async (req, res) => {
     }
 });
 
+/**
+ * GET /api/absensi/weekly-trend
+ * Get daily attendance tally for the last 5 working days (Admin only)
+ */
+router.get('/weekly-trend', requireRole('admin'), async (req, res) => {
+    try {
+        // Build list of last 5 weekdays (Mon-Fri), including today
+        const today = new Date();
+        const weekdays = [];
+        let d = new Date(today);
+        while (weekdays.length < 5) {
+            if (d.getDay() !== 0 && d.getDay() !== 6) {
+                weekdays.unshift(new Date(d));
+            }
+            d.setDate(d.getDate() - 1);
+        }
+
+        const sinceDate = weekdays[0];
+        sinceDate.setHours(0, 0, 0, 0);
+        const untilDate = new Date(today);
+        untilDate.setHours(23, 59, 59, 999);
+
+        // Fetch all MASUK records in the range
+        const { data: records, error } = await supabase
+            .from('log_absensi')
+            .select('id_pegawai, waktu_absen, status_kehadiran, tipe_absen')
+            .eq('tipe_absen', 'MASUK')
+            .gte('waktu_absen', sinceDate.toISOString())
+            .lte('waktu_absen', untilDate.toISOString());
+
+        if (error) throw error;
+
+        const dayNames = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
+        const result = weekdays.map(day => {
+            const dayStr = day.toISOString().split('T')[0];
+            const dayRecords = (records || []).filter(r =>
+                r.waktu_absen.startsWith(dayStr)
+            );
+            // Deduplicate per employee (take first record per person per day)
+            const uniqueByEmployee = {};
+            dayRecords.forEach(r => {
+                if (!uniqueByEmployee[r.id_pegawai]) {
+                    uniqueByEmployee[r.id_pegawai] = r;
+                }
+            });
+            const allPresent = Object.values(uniqueByEmployee);
+            return {
+                label: dayNames[day.getDay()],
+                tepatWaktu: allPresent.filter(r => r.status_kehadiran === 'Tepat Waktu').length,
+                terlambat: allPresent.filter(r => r.status_kehadiran === 'Terlambat').length,
+            };
+        });
+
+        res.json({ data: result });
+
+    } catch (err) {
+        console.error('Weekly trend error:', err);
+        res.status(500).json({ error: 'Gagal mengambil tren mingguan.' });
+    }
+});
+
 module.exports = router;

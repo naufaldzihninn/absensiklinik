@@ -42,30 +42,37 @@ const Charts = (() => {
 
     /**
      * Render weekly attendance bar chart
+     * @param {string} canvasId - Canvas element ID
+     * @param {Array} trendData - Array of { label, tepatWaktu, terlambat }
      */
-    function renderWeeklyBar(canvasId) {
+    function renderWeeklyBar(canvasId, trendData) {
         const ctx = document.getElementById(canvasId);
         if (!ctx) return;
 
-        const days = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum'];
-        const hadirData = days.map(() => Math.floor(Math.random() * 4) + 8);
-        const telatData = days.map(() => Math.floor(Math.random() * 3));
+        // Fallback to empty placeholders if no real data yet
+        const data = trendData && trendData.length > 0 ? trendData : [
+            { label: 'Sen', tepatWaktu: 0, terlambat: 0 },
+            { label: 'Sel', tepatWaktu: 0, terlambat: 0 },
+            { label: 'Rab', tepatWaktu: 0, terlambat: 0 },
+            { label: 'Kam', tepatWaktu: 0, terlambat: 0 },
+            { label: 'Jum', tepatWaktu: 0, terlambat: 0 },
+        ];
 
         return new Chart(ctx, {
             type: 'bar',
             data: {
-                labels: days,
+                labels: data.map(d => d.label),
                 datasets: [
                     {
                         label: 'Tepat Waktu',
-                        data: hadirData,
+                        data: data.map(d => d.tepatWaktu),
                         backgroundColor: '#22C55E',
                         borderRadius: 6,
                         barPercentage: 0.6
                     },
                     {
                         label: 'Terlambat',
-                        data: telatData,
+                        data: data.map(d => d.terlambat),
                         backgroundColor: '#F59E0B',
                         borderRadius: 6,
                         barPercentage: 0.6

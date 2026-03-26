@@ -148,8 +148,19 @@
                 document.getElementById('statAlpa').textContent = stats.alpa;
 
                 // Charts
-                Charts.renderAttendanceDonut('donutChart', stats);
-                Charts.renderWeeklyBar('barChart');
+                Charts.renderAttendanceDonut('donutChart', {
+                    tepatWaktu: stats.tepat_waktu ?? 0,
+                    telat: stats.terlambat ?? 0,
+                    alpa: stats.alpa ?? 0
+                });
+
+                // Weekly trend chart
+                try {
+                    const trendResult = await AdminAPI.getWeeklyTrend();
+                    Charts.renderWeeklyBar('barChart', trendResult.data || []);
+                } catch (e) {
+                    Charts.renderWeeklyBar('barChart', []);
+                }
 
                 // Timeline
                 renderTimeline(result.data || []);

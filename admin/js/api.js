@@ -99,6 +99,9 @@ const AdminAPI = (() => {
     function deletePegawai(id) {
         return request(`/pegawai/${id}`, { method: 'DELETE' });
     }
+    function deletePegawaiPermanent(id) {
+        return request(`/pegawai/${id}/permanent`, { method: 'DELETE' });
+    }
 
     // ── Absensi ──
     function getTodayStats() { return request('/absensi/today'); }
@@ -125,7 +128,7 @@ const AdminAPI = (() => {
 
     return {
         login, logout, getSession, isAuthenticated,
-        getPegawai, createPegawai, updatePegawai, deletePegawai,
+        getPegawai, createPegawai, updatePegawai, deletePegawai, deletePegawaiPermanent,
         getTodayStats, getHistory, getWeeklyTrend, resetFace,
         getSettings, updateSettings, getShifts, updateShift, getAuditLog,
         getHolidays, checkHoliday,

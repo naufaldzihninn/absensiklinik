@@ -180,4 +180,51 @@ router.delete('/:id', requireRole('admin'), async (req, res) => {
     }
 });
 
+/**
+ * DELETE /api/pegawai/:id/permanent
+ * Hard delete employee and all related records (Admin only)
+ */
+router.delete('/:id/permanent', requireRole('admin'), async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        // Prevent deleting yourself
+        if (req.user.id_pegawai === id) {
+            return res.status(403).json({ error: 'Tidak bisa menghapus akun sendiri.' });
+        }
+
+        // Get employee name first for audit
+        const { data: emp } = await supabase
+            .from('pegawai')
+            .select('nama_lengkap')
+            .eq('id_pegawai', id)
+            .single();
+
+        if (!emp) return res.status(404).json({ error: 'Pegawai tidak ditemukan.' });
+
+        // Delete attendance records first
+        await supabase.from('log_absensi').delete().eq('id_pegawai', id);
+
+        // Hard delete employee
+        const { error } = await supabase
+            .from('pegawai')
+            .delete()
+            .eq('id_pegawai', id);
+
+        if (error) throw error;
+
+        // Audit log
+        await supabase.from('audit_log').insert({
+            id_admin: req.user.id_pegawai,
+            aksi: 'DELETE_PEGAWAI',
+            detail: { id_pegawai: id, nama: emp.nama_lengkap }
+        });
+
+        res.json({ message: `Pegawai "${emp.nama_lengkap}" berhasil dihapus permanen.` });
+    } catch (err) {
+        console.error('Permanent delete error:', err);
+        res.status(500).json({ error: 'Gagal menghapus pegawai.' });
+    }
+});
+
 module.exports = router;

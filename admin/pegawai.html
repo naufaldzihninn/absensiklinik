@@ -120,6 +120,30 @@
         </div>
     </div>
 
+    <!-- Delete Employee Modal -->
+    <div class="modal-overlay" id="deleteEmployeeModal">
+        <div class="modal-content" style="max-width: 420px;">
+            <div class="modal-header" style="border-bottom: 1px solid #FEE2E2;">
+                <h3 style="color: #DC2626;">🗑️ Hapus Pegawai</h3>
+                <button class="modal-close" onclick="AdminApp.closeModal('deleteEmployeeModal')">✕</button>
+            </div>
+            <div class="modal-body">
+                <div style="background: #FEF2F2; border: 1px solid #FECACA; border-radius: 10px; padding: 14px; margin-bottom: 16px;">
+                    <p style="font-size: 0.85rem; color: #991B1B; margin: 0;">
+                        ⚠️ <strong>Tindakan ini tidak bisa dibatalkan!</strong><br>
+                        Semua data absensi pegawai ini juga akan ikut terhapus permanen.
+                    </p>
+                </div>
+                <p style="font-size: 0.9rem; color: #475569;">Yakin ingin menghapus pegawai:</p>
+                <p style="font-size: 1rem; font-weight: 700; color: #1E293B;" id="deleteEmpName"></p>
+            </div>
+            <div class="modal-footer">
+                <button class="admin-btn admin-btn-outline" onclick="AdminApp.closeModal('deleteEmployeeModal')">Batal</button>
+                <button class="admin-btn" style="background:#DC2626;color:white;" onclick="confirmDeleteEmployee()">Hapus Permanen</button>
+            </div>
+        </div>
+    </div>
+
     <script src="js/api.js"></script>
     <script src="js/admin-app.js"></script>
     <script>
@@ -130,6 +154,7 @@
 
         let employees = [];
         let resetTargetId = null;
+        let deleteTargetId = null;
 
         loadEmployees();
 
@@ -175,6 +200,7 @@
               <div style="display: flex; gap: 6px;">
                 ${emp.status_wajah ? `<button class="admin-btn admin-btn-danger admin-btn-sm" onclick="openResetFace('${emp.id_pegawai}', '${emp.nama_lengkap}')">🔄 Reset</button>` : ''}
                 <button class="admin-btn admin-btn-outline admin-btn-sm" onclick="toggleActive('${emp.id_pegawai}')">${emp.is_active ? 'Nonaktifkan' : 'Aktifkan'}</button>
+                <button class="admin-btn admin-btn-sm" style="background:#FEE2E2;color:#DC2626;border:1px solid #FECACA;" onclick="openDeleteEmployee('${emp.id_pegawai}', '${emp.nama_lengkap}')">🗑️ Hapus</button>
               </div>
             </td>
           </tr>
@@ -237,6 +263,23 @@
             try {
                 await AdminAPI.updatePegawai(id, { is_active: !emp.is_active });
                 AdminApp.showToast(`Status "${emp.nama_lengkap}" diubah`, 'success');
+                await loadEmployees();
+            } catch (err) {
+                AdminApp.showToast(err.message, 'error');
+            }
+        }
+
+        function openDeleteEmployee(id, name) {
+            deleteTargetId = id;
+            document.getElementById('deleteEmpName').textContent = name;
+            AdminApp.openModal('deleteEmployeeModal');
+        }
+
+        async function confirmDeleteEmployee() {
+            try {
+                await AdminAPI.deletePegawaiPermanent(deleteTargetId);
+                AdminApp.showToast('Pegawai berhasil dihapus permanen', 'success');
+                AdminApp.closeModal('deleteEmployeeModal');
                 await loadEmployees();
             } catch (err) {
                 AdminApp.showToast(err.message, 'error');

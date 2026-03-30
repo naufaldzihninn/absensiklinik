@@ -96,13 +96,13 @@ router.post('/match', async (req, res) => {
         // Lower distance = higher similarity
         // Threshold 0.4 = requires ~60% similarity (more secure than default 0.6)
         const score = Math.max(0, 1 - distance);
-        const match = distance < 0.45; // industry-standard for mobile 2D camera
+        const match = distance < 0.35; // tightened: ~65% min displayed score
 
         res.json({
             match,
             score: parseFloat(score.toFixed(4)),
             distance: parseFloat(distance.toFixed(4)),
-            threshold: 0.45
+            threshold: 0.35
         });
 
     } catch (err) {

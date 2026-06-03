@@ -6,18 +6,52 @@ const express = require('express');
 const router = express.Router();
 const supabase = require('../config/supabase');
 const { verifyToken, requireRole } = require('../middleware/auth');
+const { normalizeDescriptor, compareDescriptors } = require('../utils/face-match');
+const { cleanLimit, cleanUuid } = require('../utils/validation');
 
 // All routes require authentication
 router.use(verifyToken);
 
 // WIB = UTC+7
 const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
+const attendanceLocks = new Map();
 
 /**
  * Get current time in WIB (UTC+7), regardless of server timezone.
  */
 function nowWIB() {
     return new Date(Date.now() + WIB_OFFSET_MS);
+}
+
+function getWIBDayRange(wibDate = nowWIB()) {
+    const startWib = new Date(wibDate);
+    startWib.setUTCHours(0, 0, 0, 0);
+
+    const startUtc = new Date(startWib.getTime() - WIB_OFFSET_MS);
+    const endUtc = new Date(startUtc.getTime() + 24 * 60 * 60 * 1000 - 1);
+
+    return { startUtc, endUtc };
+}
+
+async function withAttendanceLock(key, task) {
+    const previous = attendanceLocks.get(key) || Promise.resolve();
+    let release;
+    const next = new Promise(resolve => {
+        release = resolve;
+    });
+    const queued = previous.catch(() => {}).then(() => next);
+    attendanceLocks.set(key, queued);
+
+    await previous.catch(() => {});
+
+    try {
+        return await task();
+    } finally {
+        release();
+        if (attendanceLocks.get(key) === queued) {
+            attendanceLocks.delete(key);
+        }
+    }
 }
 
 /**
@@ -65,13 +99,117 @@ function haversineDistance(lat1, lon1, lat2, lon2) {
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+function normalizeCoordinate(value, min, max) {
+    const number = Number(value);
+    if (!Number.isFinite(number) || number < min || number > max) {
+        return null;
+    }
+    return number;
+}
+
+async function validateAttendanceLocation(latitude, longitude) {
+    const lat = normalizeCoordinate(latitude, -90, 90);
+    const lng = normalizeCoordinate(longitude, -180, 180);
+
+    if (lat === null || lng === null) {
+        return {
+            ok: false,
+            status: 400,
+            error: 'Koordinat GPS wajib valid. Aktifkan izin lokasi lalu coba lagi.'
+        };
+    }
+
+    const { data: settings, error } = await supabase
+        .from('pengaturan_klinik')
+        .select('latitude, longitude, batas_radius_meter')
+        .limit(1)
+        .single();
+
+    if (error || !settings) {
+        return {
+            ok: false,
+            status: 500,
+            error: 'Pengaturan lokasi klinik belum tersedia.'
+        };
+    }
+
+    const jarak = Math.round(haversineDistance(
+        lat,
+        lng,
+        parseFloat(settings.latitude),
+        parseFloat(settings.longitude)
+    ));
+
+    if (jarak > settings.batas_radius_meter) {
+        return {
+            ok: false,
+            status: 403,
+            error: `Anda di luar radius klinik (${jarak}m / max ${settings.batas_radius_meter}m).`
+        };
+    }
+
+    return { ok: true, latitude: lat, longitude: lng, jarak };
+}
+
+function isDuplicateAttendanceError(error) {
+    if (error?.code !== '23505') return false;
+    const text = [error.message, error.details, error.hint]
+        .filter(Boolean)
+        .join(' ');
+    return text.includes('idx_log_absensi_unique_daily_shift');
+}
+
+async function verifyAttendanceFace(userId, descriptor) {
+    const normalizedDescriptor = normalizeDescriptor(descriptor);
+    if (!normalizedDescriptor) {
+        return {
+            ok: false,
+            status: 400,
+            error: 'Data wajah live tidak valid. Silakan ulangi verifikasi wajah.'
+        };
+    }
+
+    const { data: pegawai, error } = await supabase
+        .from('pegawai')
+        .select('vektor_wajah, status_wajah')
+        .eq('id_pegawai', userId)
+        .single();
+
+    if (error || !pegawai || !pegawai.status_wajah || !pegawai.vektor_wajah) {
+        return {
+            ok: false,
+            status: 400,
+            error: 'Anda belum mendaftarkan wajah. Silakan registrasi wajah terlebih dahulu.'
+        };
+    }
+
+    const result = compareDescriptors(normalizedDescriptor, pegawai.vektor_wajah);
+    if (!result) {
+        return {
+            ok: false,
+            status: 400,
+            error: 'Data wajah tersimpan tidak valid. Hubungi admin untuk reset wajah.'
+        };
+    }
+
+    if (!result.match) {
+        return {
+            ok: false,
+            status: 403,
+            error: `Verifikasi wajah gagal (kecocokan: ${(result.score * 100).toFixed(1)}%).`
+        };
+    }
+
+    return { ok: true, result };
+}
+
 /**
  * POST /api/absensi/clock-in
- * Body: { latitude, longitude, akurasi_wajah? }
+ * Body: { latitude, longitude, descriptor }
  */
 router.post('/clock-in', async (req, res) => {
     try {
-        const { latitude, longitude, akurasi_wajah = 0 } = req.body;
+        const { latitude, longitude, descriptor } = req.body;
         const userId = req.user.id_pegawai;
         const nowUtc = new Date();          // Real UTC — used for DB storage
         const nowWib = nowWIB();            // WIB — used for shift/status logic only
@@ -79,15 +217,10 @@ router.post('/clock-in', async (req, res) => {
         const currentHourMin = nowWib.getUTCHours() * 60 + nowWib.getUTCMinutes();
         const currentTime = `${String(nowWib.getUTCHours()).padStart(2,'0')}:${String(nowWib.getUTCMinutes()).padStart(2,'0')}:${String(nowWib.getUTCSeconds()).padStart(2,'0')}`;
 
-        // 1. Check if user has face registered
-        const { data: pegawai } = await supabase
-            .from('pegawai')
-            .select('vektor_wajah, status_wajah')
-            .eq('id_pegawai', userId)
-            .single();
-
-        if (!pegawai || !pegawai.vektor_wajah) {
-            return res.status(400).json({ error: 'Anda belum mendaftarkan wajah. Silakan registrasi wajah terlebih dahulu.' });
+        // 1. Verify face on the server before accepting attendance data
+        const faceCheck = await verifyAttendanceFace(userId, descriptor);
+        if (!faceCheck.ok) {
+            return res.status(faceCheck.status).json({ error: faceCheck.error });
         }
 
         // 2. Detect shift
@@ -97,73 +230,63 @@ router.post('/clock-in', async (req, res) => {
         }
 
         // 3. Check for duplicate clock-in today (use WIB date boundaries)
-        const todayStartUtc = new Date(nowWib);
-        todayStartUtc.setUTCHours(0, 0, 0, 0);
-        // Convert back: subtract 7h to get actual UTC range start for WIB midnight
-        const todayStartRealUtc = new Date(todayStartUtc.getTime() - WIB_OFFSET_MS);
-        const todayEndRealUtc = new Date(todayStartRealUtc.getTime() + 24 * 60 * 60 * 1000 - 1);
+        const { startUtc: todayStartRealUtc, endUtc: todayEndRealUtc } = getWIBDayRange(nowWib);
 
-        const { data: existing } = await supabase
-            .from('log_absensi')
-            .select('id_absen')
-            .eq('id_pegawai', userId)
-            .eq('tipe_absen', 'MASUK')
-            .eq('id_shift', shift.id_shift)
-            .gte('waktu_absen', todayStartRealUtc.toISOString())
-            .lte('waktu_absen', todayEndRealUtc.toISOString())
-            .limit(1);
+        const lockKey = `${userId}:MASUK:${shift.id_shift}:${todayStartRealUtc.toISOString()}`;
+        return await withAttendanceLock(lockKey, async () => {
+            const { data: existing } = await supabase
+                .from('log_absensi')
+                .select('id_absen')
+                .eq('id_pegawai', userId)
+                .eq('tipe_absen', 'MASUK')
+                .eq('id_shift', shift.id_shift)
+                .gte('waktu_absen', todayStartRealUtc.toISOString())
+                .lte('waktu_absen', todayEndRealUtc.toISOString())
+                .limit(1);
 
-        if (existing && existing.length > 0) {
-            return res.status(409).json({ error: 'Anda sudah melakukan clock-in untuk shift ini hari ini.' });
-        }
-
-        // 4. Validate GPS distance
-        const { data: settings } = await supabase
-            .from('pengaturan_klinik')
-            .select('latitude, longitude, batas_radius_meter')
-            .limit(1)
-            .single();
-
-        let jarak = 0;
-        if (settings && latitude && longitude) {
-            jarak = Math.round(haversineDistance(
-                latitude, longitude,
-                parseFloat(settings.latitude), parseFloat(settings.longitude)
-            ));
-
-            if (jarak > settings.batas_radius_meter) {
-                return res.status(403).json({
-                    error: `Anda di luar radius klinik (${jarak}m / max ${settings.batas_radius_meter}m).`
-                });
+            if (existing && existing.length > 0) {
+                return res.status(409).json({ error: 'Anda sudah melakukan clock-in untuk shift ini hari ini.' });
             }
-        }
 
-        // 5. Calculate lateness
-        const status = calculateStatus(currentTime, shift.jam_masuk_ideal);
+            // 4. Validate GPS distance
+            const locationCheck = await validateAttendanceLocation(latitude, longitude);
+            if (!locationCheck.ok) {
+                return res.status(locationCheck.status).json({ error: locationCheck.error });
+            }
 
-        // 6. Insert attendance record
-        const { data: record, error } = await supabase
-            .from('log_absensi')
-            .insert({
-                id_pegawai: userId,
-                id_shift: shift.id_shift,
-                tipe_absen: 'MASUK',
-                waktu_absen: nowUtc.toISOString(),  // Store real UTC — frontend converts to WIB
-                koordinat_absen: `${latitude}, ${longitude}`,
-                jarak_meter: jarak,
-                status_kehadiran: status,
-                akurasi_wajah: akurasi_wajah
-            })
-            .select('*')
-            .single();
+            // 5. Calculate lateness
+            const status = calculateStatus(currentTime, shift.jam_masuk_ideal);
 
-        if (error) throw error;
+            // 6. Insert attendance record
+            const { data: record, error } = await supabase
+                .from('log_absensi')
+                .insert({
+                    id_pegawai: userId,
+                    id_shift: shift.id_shift,
+                    tipe_absen: 'MASUK',
+                    waktu_absen: nowUtc.toISOString(),  // Store real UTC — frontend converts to WIB
+                    koordinat_absen: `${locationCheck.latitude}, ${locationCheck.longitude}`,
+                    jarak_meter: locationCheck.jarak,
+                    status_kehadiran: status,
+                    akurasi_wajah: faceCheck.result.score
+                })
+                .select('*')
+                .single();
 
-        res.status(201).json({
-            data: record,
-            message: `Clock-in berhasil! Shift ${shift.nama_shift} — ${status}`,
-            shift: shift.nama_shift,
-            status
+            if (error) {
+                if (isDuplicateAttendanceError(error)) {
+                    return res.status(409).json({ error: 'Anda sudah melakukan clock-in untuk shift ini hari ini.' });
+                }
+                throw error;
+            }
+
+            return res.status(201).json({
+                data: record,
+                message: `Clock-in berhasil! Shift ${shift.nama_shift} — ${status}`,
+                shift: shift.nama_shift,
+                status,
+                face: faceCheck.result
+            });
         });
 
     } catch (err) {
@@ -174,20 +297,23 @@ router.post('/clock-in', async (req, res) => {
 
 /**
  * POST /api/absensi/clock-out
- * Body: { latitude, longitude, akurasi_wajah? }
+ * Body: { latitude, longitude, descriptor }
  */
 router.post('/clock-out', async (req, res) => {
     try {
-        const { latitude, longitude, akurasi_wajah = 0 } = req.body;
+        const { latitude, longitude, descriptor } = req.body;
         const userId = req.user.id_pegawai;
         const nowUtc = new Date();          // Real UTC — for DB storage
         const nowWib = nowWIB();            // WIB — for date boundary logic
 
-        // 1. Find today's clock-in to determine shift (WIB date boundaries → real UTC)
-        const todayStartUtc = new Date(nowWib);
-        todayStartUtc.setUTCHours(0, 0, 0, 0);
-        const todayStartRealUtc = new Date(todayStartUtc.getTime() - WIB_OFFSET_MS);
-        const todayEndRealUtc = new Date(todayStartRealUtc.getTime() + 24 * 60 * 60 * 1000 - 1);
+        // 1. Verify face on the server before accepting attendance data
+        const faceCheck = await verifyAttendanceFace(userId, descriptor);
+        if (!faceCheck.ok) {
+            return res.status(faceCheck.status).json({ error: faceCheck.error });
+        }
+
+        // 2. Find today's clock-in to determine shift (WIB date boundaries → real UTC)
+        const { startUtc: todayStartRealUtc, endUtc: todayEndRealUtc } = getWIBDayRange(nowWib);
 
         const { data: clockIn } = await supabase
             .from('log_absensi')
@@ -204,57 +330,57 @@ router.post('/clock-out', async (req, res) => {
             return res.status(400).json({ error: 'Anda belum clock-in hari ini.' });
         }
 
-        // 2. Check for duplicate clock-out
-        const { data: existingOut } = await supabase
-            .from('log_absensi')
-            .select('id_absen')
-            .eq('id_pegawai', userId)
-            .eq('tipe_absen', 'PULANG')
-            .eq('id_shift', clockIn.id_shift)
-            .gte('waktu_absen', todayStartRealUtc.toISOString())
-            .lte('waktu_absen', todayEndRealUtc.toISOString())
-            .limit(1);
+        const lockKey = `${userId}:PULANG:${clockIn.id_shift}:${todayStartRealUtc.toISOString()}`;
+        return await withAttendanceLock(lockKey, async () => {
+            // 3. Check for duplicate clock-out
+            const { data: existingOut } = await supabase
+                .from('log_absensi')
+                .select('id_absen')
+                .eq('id_pegawai', userId)
+                .eq('tipe_absen', 'PULANG')
+                .eq('id_shift', clockIn.id_shift)
+                .gte('waktu_absen', todayStartRealUtc.toISOString())
+                .lte('waktu_absen', todayEndRealUtc.toISOString())
+                .limit(1);
 
-        if (existingOut && existingOut.length > 0) {
-            return res.status(409).json({ error: 'Anda sudah clock-out untuk shift ini.' });
-        }
+            if (existingOut && existingOut.length > 0) {
+                return res.status(409).json({ error: 'Anda sudah clock-out untuk shift ini.' });
+            }
 
-        // 3. Calculate distance
-        const { data: settings } = await supabase
-            .from('pengaturan_klinik')
-            .select('latitude, longitude, batas_radius_meter')
-            .limit(1)
-            .single();
+            // 4. Validate GPS distance
+            const locationCheck = await validateAttendanceLocation(latitude, longitude);
+            if (!locationCheck.ok) {
+                return res.status(locationCheck.status).json({ error: locationCheck.error });
+            }
 
-        let jarak = 0;
-        if (settings && latitude && longitude) {
-            jarak = Math.round(haversineDistance(
-                latitude, longitude,
-                parseFloat(settings.latitude), parseFloat(settings.longitude)
-            ));
-        }
+            // 5. Insert clock-out record
+            const { data: record, error } = await supabase
+                .from('log_absensi')
+                .insert({
+                    id_pegawai: userId,
+                    id_shift: clockIn.id_shift,
+                    tipe_absen: 'PULANG',
+                    waktu_absen: nowUtc.toISOString(),  // Store real UTC
+                    koordinat_absen: `${locationCheck.latitude}, ${locationCheck.longitude}`,
+                    jarak_meter: locationCheck.jarak,
+                    status_kehadiran: '-',
+                    akurasi_wajah: faceCheck.result.score
+                })
+                .select('*')
+                .single();
 
-        // 4. Insert clock-out record
-        const { data: record, error } = await supabase
-            .from('log_absensi')
-            .insert({
-                id_pegawai: userId,
-                id_shift: clockIn.id_shift,
-                tipe_absen: 'PULANG',
-                waktu_absen: nowUtc.toISOString(),  // Store real UTC
-                koordinat_absen: `${latitude}, ${longitude}`,
-                jarak_meter: jarak,
-                status_kehadiran: '-',
-                akurasi_wajah: akurasi_wajah
-            })
-            .select('*')
-            .single();
+            if (error) {
+                if (isDuplicateAttendanceError(error)) {
+                    return res.status(409).json({ error: 'Anda sudah clock-out untuk shift ini.' });
+                }
+                throw error;
+            }
 
-        if (error) throw error;
-
-        res.status(201).json({
-            data: record,
-            message: 'Clock-out berhasil!'
+            return res.status(201).json({
+                data: record,
+                message: 'Clock-out berhasil!',
+                face: faceCheck.result
+            });
         });
 
     } catch (err) {
@@ -271,12 +397,17 @@ router.post('/clock-out', async (req, res) => {
  */
 router.get('/history', async (req, res) => {
     try {
-        const days = parseInt(req.query.days) || 30;
+        const days = cleanLimit(req.query.days, 30, 365);
         const sinceDate = new Date();
         sinceDate.setDate(sinceDate.getDate() - days);
 
-        const targetUser = (req.user.role === 'admin' && req.query.id_pegawai)
-            ? req.query.id_pegawai
+        const requestedUserId = req.query.id_pegawai ? cleanUuid(req.query.id_pegawai) : null;
+        if (req.query.id_pegawai && !requestedUserId) {
+            return res.status(400).json({ error: 'ID pegawai tidak valid.' });
+        }
+
+        const targetUser = (req.user.role === 'admin' && requestedUserId)
+            ? requestedUserId
             : req.user.id_pegawai;
 
         let query = supabase
@@ -291,7 +422,7 @@ router.get('/history', async (req, res) => {
             .order('waktu_absen', { ascending: false });
 
         // Non-admin can only see own records
-        if (req.user.role !== 'admin' || req.query.id_pegawai) {
+        if (req.user.role !== 'admin' || requestedUserId) {
             query = query.eq('id_pegawai', targetUser);
         }
 
@@ -321,10 +452,7 @@ router.get('/history', async (req, res) => {
  */
 router.get('/today', requireRole('admin'), async (req, res) => {
     try {
-        const todayStart = new Date();
-        todayStart.setHours(0, 0, 0, 0);
-        const todayEnd = new Date();
-        todayEnd.setHours(23, 59, 59, 999);
+        const { startUtc: todayStart, endUtc: todayEnd } = getWIBDayRange();
 
         // Get today's clock-in records
         const { data: todayRecords } = await supabase
@@ -381,21 +509,19 @@ router.get('/today', requireRole('admin'), async (req, res) => {
  */
 router.get('/weekly-trend', requireRole('admin'), async (req, res) => {
     try {
-        // Build list of last 5 weekdays (Mon-Fri), including today
-        const today = new Date();
+        // Build list of last 5 weekdays (Mon-Fri) in WIB, including today
+        const today = nowWIB();
         const weekdays = [];
         let d = new Date(today);
         while (weekdays.length < 5) {
-            if (d.getDay() !== 0 && d.getDay() !== 6) {
+            if (d.getUTCDay() !== 0 && d.getUTCDay() !== 6) {
                 weekdays.unshift(new Date(d));
             }
-            d.setDate(d.getDate() - 1);
+            d.setUTCDate(d.getUTCDate() - 1);
         }
 
-        const sinceDate = weekdays[0];
-        sinceDate.setHours(0, 0, 0, 0);
-        const untilDate = new Date(today);
-        untilDate.setHours(23, 59, 59, 999);
+        const { startUtc: sinceDate } = getWIBDayRange(weekdays[0]);
+        const { endUtc: untilDate } = getWIBDayRange(weekdays[weekdays.length - 1]);
 
         // Fetch all MASUK records in the range
         const { data: records, error } = await supabase
@@ -409,10 +535,11 @@ router.get('/weekly-trend', requireRole('admin'), async (req, res) => {
 
         const dayNames = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
         const result = weekdays.map(day => {
-            const dayStr = day.toISOString().split('T')[0];
-            const dayRecords = (records || []).filter(r =>
-                r.waktu_absen.startsWith(dayStr)
-            );
+            const { startUtc, endUtc } = getWIBDayRange(day);
+            const dayRecords = (records || []).filter(r => {
+                const time = new Date(r.waktu_absen);
+                return time >= startUtc && time <= endUtc;
+            });
             // Deduplicate per employee (take first record per person per day)
             const uniqueByEmployee = {};
             dayRecords.forEach(r => {
@@ -422,7 +549,7 @@ router.get('/weekly-trend', requireRole('admin'), async (req, res) => {
             });
             const allPresent = Object.values(uniqueByEmployee);
             return {
-                label: dayNames[day.getDay()],
+                label: dayNames[day.getUTCDay()],
                 tepatWaktu: allPresent.filter(r => r.status_kehadiran === 'Tepat Waktu').length,
                 terlambat: allPresent.filter(r => r.status_kehadiran === 'Terlambat').length,
             };

@@ -11,7 +11,6 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
         rel="stylesheet">
-    <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="css/admin.css">
 </head>
 
@@ -27,14 +26,13 @@
                 style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 12px;">
                 <div class="search-bar">
                     <span>🔍</span>
-                    <input type="text" id="searchInput" placeholder="Cari pegawai..." oninput="filterEmployees()">
+                    <input type="text" id="searchInput" placeholder="Cari pegawai...">
                 </div>
                 <div style="display: flex; gap: 8px;">
-                    <button class="admin-btn admin-btn-outline"
-                        onclick="AdminApp.showToast('Fitur bulk import akan tersedia setelah backend siap', 'info')">
+                    <button class="admin-btn admin-btn-outline" id="importCsvBtn">
                         📂 Import CSV
                     </button>
-                    <button class="admin-btn admin-btn-primary" onclick="AdminApp.openModal('addEmployeeModal')">
+                    <button class="admin-btn admin-btn-primary" id="addEmployeeBtn">
                         ➕ Tambah Pegawai
                     </button>
                 </div>
@@ -72,7 +70,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h3>Tambah Pegawai Baru</h3>
-                <button class="modal-close" onclick="AdminApp.closeModal('addEmployeeModal')">✕</button>
+                <button class="modal-close" data-close-modal="addEmployeeModal">✕</button>
             </div>
             <div class="modal-body">
                 <div class="admin-form-group">
@@ -89,9 +87,8 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="admin-btn admin-btn-outline"
-                    onclick="AdminApp.closeModal('addEmployeeModal')">Batal</button>
-                <button class="admin-btn admin-btn-primary" onclick="addEmployee()">Simpan</button>
+                <button class="admin-btn admin-btn-outline" data-close-modal="addEmployeeModal">Batal</button>
+                <button class="admin-btn admin-btn-primary" id="saveEmployeeBtn">Simpan</button>
             </div>
         </div>
     </div>
@@ -101,7 +98,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h3>Reset Wajah Pegawai</h3>
-                <button class="modal-close" onclick="AdminApp.closeModal('resetFaceModal')">✕</button>
+                <button class="modal-close" data-close-modal="resetFaceModal">✕</button>
             </div>
             <div class="modal-body" style="text-align: center;">
                 <div style="font-size: 3rem; margin-bottom: 16px;">⚠️</div>
@@ -112,9 +109,8 @@
                 </p>
             </div>
             <div class="modal-footer">
-                <button class="admin-btn admin-btn-outline"
-                    onclick="AdminApp.closeModal('resetFaceModal')">Batal</button>
-                <button class="admin-btn admin-btn-danger" onclick="confirmResetFace()"
+                <button class="admin-btn admin-btn-outline" data-close-modal="resetFaceModal">Batal</button>
+                <button class="admin-btn admin-btn-danger" id="confirmResetFaceBtn"
                     style="background: #EF4444; color: white;">Reset Wajah</button>
             </div>
         </div>
@@ -125,7 +121,7 @@
         <div class="modal-content" style="max-width: 420px;">
             <div class="modal-header" style="border-bottom: 1px solid #FEE2E2;">
                 <h3 style="color: #DC2626;">🗑️ Hapus Pegawai</h3>
-                <button class="modal-close" onclick="AdminApp.closeModal('deleteEmployeeModal')">✕</button>
+                <button class="modal-close" data-close-modal="deleteEmployeeModal">✕</button>
             </div>
             <div class="modal-body">
                 <div style="background: #FEF2F2; border: 1px solid #FECACA; border-radius: 10px; padding: 14px; margin-bottom: 16px;">
@@ -138,154 +134,15 @@
                 <p style="font-size: 1rem; font-weight: 700; color: #1E293B;" id="deleteEmpName"></p>
             </div>
             <div class="modal-footer">
-                <button class="admin-btn admin-btn-outline" onclick="AdminApp.closeModal('deleteEmployeeModal')">Batal</button>
-                <button class="admin-btn" style="background:#DC2626;color:white;" onclick="confirmDeleteEmployee()">Hapus Permanen</button>
+                <button class="admin-btn admin-btn-outline" data-close-modal="deleteEmployeeModal">Batal</button>
+                <button class="admin-btn" id="confirmDeleteEmployeeBtn" style="background:#DC2626;color:white;">Hapus Permanen</button>
             </div>
         </div>
     </div>
 
     <script src="js/api.js"></script>
     <script src="js/admin-app.js"></script>
-    <script>
-        if (!AdminAPI.isAuthenticated()) { window.location.href = 'login.html'; }
-
-        document.getElementById('sidebarContainer').innerHTML = AdminApp.renderSidebar('pegawai');
-        document.getElementById('topBarContainer').innerHTML = AdminApp.renderTopBar('Kelola Pegawai');
-
-        let employees = [];
-        let resetTargetId = null;
-        let deleteTargetId = null;
-
-        loadEmployees();
-
-        async function loadEmployees() {
-            try {
-                const result = await AdminAPI.getPegawai();
-                employees = result.data || [];
-                renderEmployeeTable(employees);
-            } catch (err) {
-                AdminApp.showToast(err.message, 'error');
-            }
-        }
-
-        function renderEmployeeTable(data) {
-            const tbody = document.getElementById('employeeTableBody');
-            document.getElementById('employeeCount').textContent = `${data.length} pegawai`;
-
-            tbody.innerHTML = data.map(emp => {
-                const initials = AdminApp.getInitials(emp.nama_lengkap);
-                const faceStatusBadge = emp.status_wajah
-                    ? '<span class="admin-badge admin-badge-success">Terdaftar ✓</span>'
-                    : '<span class="admin-badge admin-badge-warning">Belum</span>';
-                const activeBadge = emp.is_active
-                    ? '<span class="admin-badge admin-badge-success">Aktif</span>'
-                    : '<span class="admin-badge admin-badge-default">Nonaktif</span>';
-
-                return `
-          <tr>
-            <td>
-              <div style="display: flex; align-items: center; gap: 10px;">
-                <div style="width: 34px; height: 34px; border-radius: 50%; background: linear-gradient(135deg, #0D9488, #14B8A6); 
-                  display: flex; align-items: center; justify-content: center; color: white; font-size: 0.75rem; font-weight: 700;">
-                  ${initials}
-                </div>
-                <span style="font-weight: 600;">${emp.nama_lengkap}</span>
-              </div>
-            </td>
-            <td style="color: #64748B;">${emp.username}</td>
-            <td>${faceStatusBadge}</td>
-            <td>${activeBadge}</td>
-            <td style="color: #64748B;">${AdminApp.formatDate(emp.created_at)}</td>
-            <td>
-              <div style="display: flex; gap: 6px;">
-                ${emp.status_wajah ? `<button class="admin-btn admin-btn-danger admin-btn-sm" onclick="openResetFace('${emp.id_pegawai}', '${emp.nama_lengkap}')">🔄 Reset</button>` : ''}
-                <button class="admin-btn admin-btn-outline admin-btn-sm" onclick="toggleActive('${emp.id_pegawai}')">${emp.is_active ? 'Nonaktifkan' : 'Aktifkan'}</button>
-                <button class="admin-btn admin-btn-sm" style="background:#FEE2E2;color:#DC2626;border:1px solid #FECACA;" onclick="openDeleteEmployee('${emp.id_pegawai}', '${emp.nama_lengkap}')">🗑️ Hapus</button>
-              </div>
-            </td>
-          </tr>
-        `;
-            }).join('');
-        }
-
-        function filterEmployees() {
-            const query = document.getElementById('searchInput').value.toLowerCase();
-            const filtered = employees.filter(e =>
-                e.nama_lengkap.toLowerCase().includes(query) ||
-                e.username.toLowerCase().includes(query)
-            );
-            renderEmployeeTable(filtered);
-        }
-
-        async function addEmployee() {
-            const name = document.getElementById('newEmpName').value.trim();
-            const username = document.getElementById('newEmpUsername').value.trim();
-            const password = document.getElementById('newEmpPassword').value;
-
-            if (!name || !username || !password) {
-                AdminApp.showToast('Semua field wajib diisi', 'error');
-                return;
-            }
-
-            try {
-                await AdminAPI.createPegawai({ nama_lengkap: name, username, password });
-                AdminApp.closeModal('addEmployeeModal');
-                AdminApp.showToast(`Pegawai "${name}" berhasil ditambahkan`, 'success');
-                document.getElementById('newEmpName').value = '';
-                document.getElementById('newEmpUsername').value = '';
-                document.getElementById('newEmpPassword').value = '';
-                await loadEmployees();
-            } catch (err) {
-                AdminApp.showToast(err.message, 'error');
-            }
-        }
-
-        function openResetFace(id, name) {
-            resetTargetId = id;
-            document.getElementById('resetFaceName').textContent = name;
-            AdminApp.openModal('resetFaceModal');
-        }
-
-        async function confirmResetFace() {
-            try {
-                await AdminAPI.resetFace(resetTargetId);
-                AdminApp.showToast('Wajah berhasil direset', 'success');
-                AdminApp.closeModal('resetFaceModal');
-                await loadEmployees();
-            } catch (err) {
-                AdminApp.showToast(err.message, 'error');
-            }
-        }
-
-        async function toggleActive(id) {
-            const emp = employees.find(e => e.id_pegawai === id);
-            if (!emp) return;
-            try {
-                await AdminAPI.updatePegawai(id, { is_active: !emp.is_active });
-                AdminApp.showToast(`Status "${emp.nama_lengkap}" diubah`, 'success');
-                await loadEmployees();
-            } catch (err) {
-                AdminApp.showToast(err.message, 'error');
-            }
-        }
-
-        function openDeleteEmployee(id, name) {
-            deleteTargetId = id;
-            document.getElementById('deleteEmpName').textContent = name;
-            AdminApp.openModal('deleteEmployeeModal');
-        }
-
-        async function confirmDeleteEmployee() {
-            try {
-                await AdminAPI.deletePegawaiPermanent(deleteTargetId);
-                AdminApp.showToast('Pegawai berhasil dihapus permanen', 'success');
-                AdminApp.closeModal('deleteEmployeeModal');
-                await loadEmployees();
-            } catch (err) {
-                AdminApp.showToast(err.message, 'error');
-            }
-        }
-    </script>
+    <script src="js/pegawai.js"></script>
 </body>
 
 </html>

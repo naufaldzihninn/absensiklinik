@@ -63,6 +63,19 @@ const AdminApp = (() => {
   }
 
   /**
+   * Escape dynamic text before injecting it into shared layout templates.
+   */
+  function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;'
+    }[char]));
+  }
+
+  /**
    * Format date to Indonesian locale
    */
   function formatDate(date) {
@@ -90,7 +103,7 @@ const AdminApp = (() => {
    * Get initials from name
    */
   function getInitials(name) {
-    return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+    return String(name || 'Admin').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
   }
 
   /**
@@ -126,7 +139,7 @@ const AdminApp = (() => {
           </a>
         </nav>
         <div class="sidebar-footer">
-          <a href="#" class="sidebar-link" onclick="AdminAPI.logout(); return false;" data-page="">
+          <a href="#" class="sidebar-link" id="adminLogoutLink" data-page="">
             <span class="link-icon">🚪</span> Logout
           </a>
         </div>
@@ -145,18 +158,31 @@ const AdminApp = (() => {
     return `
       <div class="top-bar">
         <div style="display: flex; align-items: center; gap: 12px;">
-          <button onclick="AdminApp.toggleSidebar()" style="display: none; border: none; background: none; font-size: 1.3rem; cursor: pointer; color: #334155;" class="mobile-menu-btn">☰</button>
-          <h1 class="top-bar-title">${title}</h1>
+          <button type="button" id="mobileMenuBtn" style="display: none; border: none; background: none; font-size: 1.3rem; cursor: pointer; color: #334155;" class="mobile-menu-btn">☰</button>
+          <h1 class="top-bar-title">${escapeHtml(title)}</h1>
         </div>
         <div class="top-bar-right">
           <div class="top-bar-user">
-            <span style="font-size: 0.85rem; color: #64748B; font-weight: 500;">${name}</span>
-            <div class="top-bar-avatar">${initials}</div>
+            <span style="font-size: 0.85rem; color: #64748B; font-weight: 500;">${escapeHtml(name)}</span>
+            <div class="top-bar-avatar">${escapeHtml(initials)}</div>
           </div>
         </div>
       </div>
     `;
   }
+
+  document.addEventListener('click', (event) => {
+    const logoutLink = event.target.closest('#adminLogoutLink');
+    if (logoutLink) {
+      event.preventDefault();
+      AdminAPI.logout();
+      return;
+    }
+
+    if (event.target.closest('#mobileMenuBtn')) {
+      toggleSidebar();
+    }
+  });
 
   return {
     showToast,
@@ -168,6 +194,7 @@ const AdminApp = (() => {
     formatTime,
     formatDateTime,
     getInitials,
+    escapeHtml,
     renderSidebar,
     renderTopBar
   };

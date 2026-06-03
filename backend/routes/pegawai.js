@@ -7,6 +7,7 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const supabase = require('../config/supabase');
 const { verifyToken, requireRole } = require('../middleware/auth');
+const { cleanUsername, cleanString, cleanRole, cleanBoolean, cleanUuid } = require('../utils/validation');
 
 // All routes require authentication
 router.use(verifyToken);
@@ -57,13 +58,20 @@ router.get('/me', async (req, res) => {
  */
 router.post('/', requireRole('admin'), async (req, res) => {
     try {
-        const { username, password, nama_lengkap, role = 'pegawai' } = req.body;
+        const username = cleanUsername(req.body.username);
+        const password = cleanString(req.body.password, 128);
+        const nama_lengkap = cleanString(req.body.nama_lengkap, 255);
+        const role = cleanRole(req.body.role || 'pegawai');
 
         if (!username || !password || !nama_lengkap) {
-            return res.status(400).json({ error: 'Username, password, dan nama lengkap harus diisi.' });
+            return res.status(400).json({ error: 'Username, password, dan nama lengkap harus valid.' });
         }
 
-        if (!['pegawai', 'admin'].includes(role)) {
+        if (password.length < 8) {
+            return res.status(400).json({ error: 'Password minimal 8 karakter.' });
+        }
+
+        if (!role) {
             return res.status(400).json({ error: 'Role harus pegawai atau admin.' });
         }
 
@@ -75,7 +83,7 @@ router.post('/', requireRole('admin'), async (req, res) => {
             .insert({
                 username: username.trim().toLowerCase(),
                 password: hashedPassword,
-                nama_lengkap: nama_lengkap.trim(),
+                nama_lengkap,
                 role
             })
             .select('id_pegawai, username, nama_lengkap, role, status_wajah, is_active, created_at')
@@ -109,12 +117,33 @@ router.post('/', requireRole('admin'), async (req, res) => {
  */
 router.put('/:id', requireRole('admin'), async (req, res) => {
     try {
-        const { id } = req.params;
+        const id = cleanUuid(req.params.id);
+        if (!id) {
+            return res.status(400).json({ error: 'ID pegawai tidak valid.' });
+        }
+
         const updates = {};
 
-        if (req.body.nama_lengkap) updates.nama_lengkap = req.body.nama_lengkap.trim();
-        if (req.body.role) updates.role = req.body.role;
-        if (typeof req.body.is_active === 'boolean') updates.is_active = req.body.is_active;
+        if (req.body.nama_lengkap !== undefined) {
+            const nama = cleanString(req.body.nama_lengkap, 255);
+            if (!nama) return res.status(400).json({ error: 'Nama lengkap tidak valid.' });
+            updates.nama_lengkap = nama;
+        }
+
+        if (req.body.role !== undefined) {
+            const role = cleanRole(req.body.role);
+            if (!role) return res.status(400).json({ error: 'Role harus pegawai atau admin.' });
+            updates.role = role;
+        }
+
+        if (req.body.is_active !== undefined) {
+            const isActive = cleanBoolean(req.body.is_active);
+            if (isActive === null) return res.status(400).json({ error: 'Status aktif harus boolean.' });
+            if (id === req.user.id_pegawai && !isActive) {
+                return res.status(403).json({ error: 'Tidak bisa menonaktifkan akun sendiri.' });
+            }
+            updates.is_active = isActive;
+        }
 
         if (Object.keys(updates).length === 0) {
             return res.status(400).json({ error: 'Tidak ada data yang diubah.' });
@@ -154,7 +183,14 @@ router.put('/:id', requireRole('admin'), async (req, res) => {
  */
 router.delete('/:id', requireRole('admin'), async (req, res) => {
     try {
-        const { id } = req.params;
+        const id = cleanUuid(req.params.id);
+        if (!id) {
+            return res.status(400).json({ error: 'ID pegawai tidak valid.' });
+        }
+
+        if (req.user.id_pegawai === id) {
+            return res.status(403).json({ error: 'Tidak bisa menonaktifkan akun sendiri.' });
+        }
 
         const { data, error } = await supabase
             .from('pegawai')
@@ -186,7 +222,10 @@ router.delete('/:id', requireRole('admin'), async (req, res) => {
  */
 router.delete('/:id/permanent', requireRole('admin'), async (req, res) => {
     try {
-        const { id } = req.params;
+        const id = cleanUuid(req.params.id);
+        if (!id) {
+            return res.status(400).json({ error: 'ID pegawai tidak valid.' });
+        }
 
         // Prevent deleting yourself
         if (req.user.id_pegawai === id) {

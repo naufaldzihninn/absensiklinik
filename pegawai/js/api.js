@@ -107,17 +107,17 @@ const API = (() => {
     }
 
     // ── Absensi ──
-    function clockIn(latitude, longitude, akurasi_wajah = 0) {
+    function clockIn(latitude, longitude, descriptor) {
         return request('/absensi/clock-in', {
             method: 'POST',
-            body: { latitude, longitude, akurasi_wajah }
+            body: { latitude, longitude, descriptor }
         });
     }
 
-    function clockOut(latitude, longitude, akurasi_wajah = 0) {
+    function clockOut(latitude, longitude, descriptor) {
         return request('/absensi/clock-out', {
             method: 'POST',
-            body: { latitude, longitude, akurasi_wajah }
+            body: { latitude, longitude, descriptor }
         });
     }
 

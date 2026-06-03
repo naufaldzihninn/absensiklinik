@@ -51,9 +51,8 @@
         </div>
 
         <!-- Ingat Saya -->
-        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px; cursor: pointer;"
-          onclick="document.getElementById('rememberMe').checked = !document.getElementById('rememberMe').checked">
-          <input type="checkbox" id="rememberMe" checked onclick="event.stopPropagation()"
+        <div id="rememberToggle" style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px; cursor: pointer;">
+          <input type="checkbox" id="rememberMe" checked
             style="width: 18px; height: 18px; accent-color: var(--primary); cursor: pointer; border-radius: 4px;">
           <label for="rememberMe"
             style="font-size: 0.9rem; color: var(--text-secondary); cursor: pointer; user-select: none;">
@@ -78,53 +77,7 @@
 
   <script src="js/app.js"></script>
   <script src="js/api.js"></script>
-  <script>
-    // Redirect if already logged in
-    if (API.isAuthenticated()) {
-      const s = API.getSession();
-      window.location.href = (s && s.has_vektor) ? 'index.html' : 'register-face.html';
-    }
-
-    const loginForm = document.getElementById('loginForm');
-    const loginBtn = document.getElementById('loginBtn');
-    const loginText = document.getElementById('loginText');
-    const loginSpinner = document.getElementById('loginSpinner');
-
-    loginForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-
-      const username = document.getElementById('username').value.trim();
-      const password = document.getElementById('password').value;
-      const rememberMe = document.getElementById('rememberMe').checked;
-
-      if (!username || !password) {
-        App.showToast('Silakan isi username dan password', 'warning');
-        return;
-      }
-
-      loginBtn.disabled = true;
-      loginText.textContent = 'Memproses...';
-      loginSpinner.style.display = 'block';
-
-      try {
-        const result = await API.login(username, password, rememberMe);
-        App.showToast(`Selamat datang, ${result.user.nama_lengkap}!`, 'success');
-
-        setTimeout(() => {
-          if (result.user.has_vektor) {
-            window.location.href = 'index.html';
-          } else {
-            window.location.href = 'register-face.html';
-          }
-        }, 800);
-      } catch (err) {
-        App.showToast(err.message, 'error');
-        loginBtn.disabled = false;
-        loginText.textContent = 'Masuk';
-        loginSpinner.style.display = 'none';
-      }
-    });
-  </script>
+  <script src="js/login.js"></script>
 </body>
 
 </html>

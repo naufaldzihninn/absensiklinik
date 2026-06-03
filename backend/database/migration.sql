@@ -60,6 +60,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS pegawai_updated_at ON pegawai;
 CREATE TRIGGER pegawai_updated_at
   BEFORE UPDATE ON pegawai
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
@@ -84,6 +85,38 @@ CREATE TABLE IF NOT EXISTS log_absensi (
 CREATE INDEX IF NOT EXISTS idx_log_absensi_pegawai ON log_absensi(id_pegawai);
 CREATE INDEX IF NOT EXISTS idx_log_absensi_waktu ON log_absensi(waktu_absen);
 CREATE INDEX IF NOT EXISTS idx_log_absensi_tipe ON log_absensi(tipe_absen);
+
+-- Enforce one MASUK/PULANG record per employee, shift, and WIB date.
+-- If old duplicate data exists, this block leaves the migration running and prints a notice.
+-- Clean duplicates first, then rerun this migration to create the unique index.
+-- Duplicate check:
+--   SELECT id_pegawai, id_shift, tipe_absen, ((waktu_absen AT TIME ZONE 'Asia/Jakarta')::date) AS tanggal_wib, COUNT(*)
+--   FROM log_absensi
+--   GROUP BY id_pegawai, id_shift, tipe_absen, tanggal_wib
+--   HAVING COUNT(*) > 1;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM log_absensi
+    GROUP BY
+      id_pegawai,
+      id_shift,
+      tipe_absen,
+      ((waktu_absen AT TIME ZONE 'Asia/Jakarta')::date)
+    HAVING COUNT(*) > 1
+  ) THEN
+    RAISE NOTICE 'Duplicate attendance rows found; idx_log_absensi_unique_daily_shift was not created.';
+  ELSE
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_log_absensi_unique_daily_shift
+      ON log_absensi (
+        id_pegawai,
+        id_shift,
+        tipe_absen,
+        ((waktu_absen AT TIME ZONE 'Asia/Jakarta')::date)
+      );
+  END IF;
+END $$;
 
 -- ─────────────────────────────────────────────────────
 -- 6. TABEL: audit_log
@@ -114,36 +147,43 @@ ALTER TABLE audit_log DISABLE ROW LEVEL SECURITY;
 -- 8. SEED DATA
 -- ─────────────────────────────────────────────────────
 
--- Default clinic settings
-INSERT INTO pengaturan_klinik (nama_klinik, latitude, longitude, batas_radius_meter)
-VALUES ('Klinik Prima Insani', -6.2000000, 106.8166660, 50)
-ON CONFLICT DO NOTHING;
+-- Default clinic settings (singleton row)
+INSERT INTO pengaturan_klinik (id, nama_klinik, latitude, longitude, batas_radius_meter)
+VALUES (1, 'Klinik Prima Insani', -6.2000000, 106.8166660, 50)
+ON CONFLICT (id) DO UPDATE SET
+  nama_klinik = EXCLUDED.nama_klinik,
+  latitude = EXCLUDED.latitude,
+  longitude = EXCLUDED.longitude,
+  batas_radius_meter = EXCLUDED.batas_radius_meter;
 
 -- Default shifts
+UPDATE master_shift
+SET
+  batas_jam_mulai_scan = '04:00:00',
+  batas_jam_akhir_scan = '11:59:59',
+  jam_masuk_ideal = '07:00:00',
+  jam_pulang_ideal = '14:00:00'
+WHERE nama_shift = 'Pagi';
+
 INSERT INTO master_shift (nama_shift, batas_jam_mulai_scan, batas_jam_akhir_scan, jam_masuk_ideal, jam_pulang_ideal)
-VALUES 
-  ('Pagi', '04:00:00', '11:59:59', '07:00:00', '14:00:00'),
-  ('Siang', '12:00:00', '20:00:00', '14:00:00', '21:00:00')
-ON CONFLICT DO NOTHING;
+SELECT 'Pagi', '04:00:00', '11:59:59', '07:00:00', '14:00:00'
+WHERE NOT EXISTS (SELECT 1 FROM master_shift WHERE nama_shift = 'Pagi');
 
--- Default admin account (password: admin123, pre-hashed with bcrypt)
--- Hash generated with bcryptjs.hashSync('admin123', 10)
-INSERT INTO pegawai (username, password, nama_lengkap, role, is_active)
-VALUES (
-  'admin',
-  '$2a$10$LO931Hv9sxI4bXV.1Rq/A.bXMz8GHhuopjs/T1t47lGeGScxtwUau',
-  'Administrator',
-  'admin',
-  TRUE
-)
-ON CONFLICT (username) DO NOTHING;
+UPDATE master_shift
+SET
+  batas_jam_mulai_scan = '12:00:00',
+  batas_jam_akhir_scan = '20:00:00',
+  jam_masuk_ideal = '14:00:00',
+  jam_pulang_ideal = '21:00:00'
+WHERE nama_shift = 'Siang';
 
--- Default employee accounts for testing (password: password123)
-INSERT INTO pegawai (username, password, nama_lengkap, role, is_active)
-VALUES 
-  ('budi.santoso', '$2a$10$lEg6XuKCHw25cLuBWwOHm.iHZepQpTuDw8NXh5rA1eOcpIs8OcrVq', 'Budi Santoso', 'pegawai', TRUE),
-  ('siti.rahma', '$2a$10$lEg6XuKCHw25cLuBWwOHm.iHZepQpTuDw8NXh5rA1eOcpIs8OcrVq', 'Siti Rahma', 'pegawai', TRUE)
-ON CONFLICT (username) DO NOTHING;
+INSERT INTO master_shift (nama_shift, batas_jam_mulai_scan, batas_jam_akhir_scan, jam_masuk_ideal, jam_pulang_ideal)
+SELECT 'Siang', '12:00:00', '20:00:00', '14:00:00', '21:00:00'
+WHERE NOT EXISTS (SELECT 1 FROM master_shift WHERE nama_shift = 'Siang');
+
+-- No default user credentials are seeded.
+-- Create the first admin through the backend bootstrap script:
+--   npm run create-admin -- --username admin --password "strong-password" --name "Administrator"
 
 -- =====================================================
 -- SELESAI! ✅

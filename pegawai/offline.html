@@ -106,17 +106,11 @@
             Koneksi internet tidak tersedia. Absensi memerlukan koneksi internet
             untuk verifikasi GPS dan wajah.
         </p>
-        <button class="btn" onclick="location.reload()">🔄 Coba Lagi</button>
+        <button class="btn" id="reloadBtn">🔄 Coba Lagi</button>
         <div class="status" id="netStatus">⚠ Tidak ada koneksi internet</div>
     </div>
 
-    <script>
-        window.addEventListener('online', () => {
-            document.getElementById('netStatus').className = 'status online';
-            document.getElementById('netStatus').innerHTML = '✓ Koneksi kembali! Memuat ulang...';
-            setTimeout(() => location.reload(), 1500);
-        });
-    </script>
+    <script src="js/offline.js"></script>
 </body>
 
 </html>

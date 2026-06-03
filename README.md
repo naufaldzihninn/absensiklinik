@@ -1,7 +1,7 @@
 # 📸 Sistem Absensi Cerdas — Klinik Prima Insani
 
 <div align="center">
-  <img src="https://img.shields.io/badge/Status-Production_Ready-success?style=for-the-badge" alt="Status" />
+  <img src="https://img.shields.io/badge/Status-Hardening_Beta-yellow?style=for-the-badge" alt="Status" />
   <img src="https://img.shields.io/badge/Platform-PWA_%7C_Web-blue?style=for-the-badge" alt="Platform" />
   <img src="https://img.shields.io/badge/AI-Face_Recognition-orange?style=for-the-badge" alt="AI" />
   <img src="https://img.shields.io/badge/License-MIT-blueviolet?style=for-the-badge" alt="License" />
@@ -9,7 +9,7 @@
 
 <br />
 
-Sistem Absensi Cerdas Klinik Prima Insani adalah solusi perangkat lunak *end-to-end* yang dirancang untuk mendigitalisasi dan mengamankan proses presensi pegawai klinik. 
+Sistem Absensi Cerdas Klinik Prima Insani adalah solusi perangkat lunak berbasis web yang dirancang untuk mendigitalisasi dan memperkuat proses presensi pegawai klinik.
 
 Dibangun sebagai ekosistem absensi tanpa instalasi berbasis **Progressive Web App (PWA)** yang diperkuat dengan kecerdasan buatan (Face Recognition), validasi lokasi (Geo-Fencing), dan otomasi shift.
 
@@ -17,10 +17,10 @@ Dibangun sebagai ekosistem absensi tanpa instalasi berbasis **Progressive Web Ap
 
 ## 🎯 Mengapa Sistem Ini Dibuat?
 
-Sistem ini dirancang untuk menyelesaikan masalah umum pada absensi tradisional dan aplikasi mobile standar:
-1. **Mencegah Kecurangan**: Mematikan celah dari *Fake GPS* atau "titip absen".
+Sistem ini dirancang untuk mengurangi masalah umum pada absensi tradisional dan aplikasi mobile standar:
+1. **Mengurangi Kecurangan**: Menggabungkan verifikasi wajah live, validasi radius lokasi, timestamp server, dan proteksi absen ganda.
 2. **Tanpa Installasi Rumit**: PWA bekerja langsung dari browser, bebas dari kendala _storage_ penuh pada HP pegawai.
-3. **Low-Cost (Zero-Storage RAM Processing)**: Meminimalkan biaya cloud storage secara revolusioner karena foto wajah diproses _on-the-fly_ di RAM server dan membuang sampah datanya, tidak menyimpannya selamanya.
+3. **Low-Cost Biometric Descriptor**: Foto diproses di browser menjadi vektor wajah 128 dimensi; backend menyimpan descriptor dan log absensi, bukan arsip foto selfie harian.
 4. **Otomasi Shift**: Meringankan beban administratif HRD; sistem otomatis tahu siapa yang terlambat dan di shift mana dia absen.
 
 ---
@@ -29,19 +29,19 @@ Sistem ini dirancang untuk menyelesaikan masalah umum pada absensi tradisional d
 
 ### 📱 Modul Pegawai (PWA Mobile)
 - 🤳 **Self-Service Biometric Onboarding:** Pegawai setup wajah mereka sendiri saat pertama kali login.
-- 📸 **Strict Live-Capture:** Mengunci kamera hanya untuk foto *live*, mencegah upload gambar dari galeri/kamera virtual.
-- 📍 **Dynamic Geo-Fencing:** Tombol absen akan membeku (terkunci) jika Anda berada di luar radius klinik.
+- 📸 **Live-Capture Flow:** Absensi memakai stream kamera langsung dan tidak menerima upload file gambar.
+- 📍 **Dynamic Geo-Fencing:** Tombol absen dibatasi oleh radius klinik, dan API tetap memvalidasi koordinat sebelum menyimpan data.
 - ⚡ **Offline Awareness:** Deteksi cerdas jika koneksi internet terputus.
 
 ### 🧠 Modul Keamanan & AI (API Server)
-- 🤖 **On-the-fly Face Matching AI:** Pencocokan biometrik real-time dengan akurasi tinggi (Threshold ≥ 85%).
+- 🤖 **Server-Enforced Face Matching:** Backend wajib mencocokkan descriptor wajah live sebelum menyimpan absensi.
 - ⏳ **Server-Side Timestamp:** Mengunci waktu presensi dari server. Memajukan/memundurkan jam di HP tidak akan berguna.
 - 🚦 **Smart Auto-Shift:** Otomatis menentukan Shift Pagi atau Siang dan kalkulasi keterlambatan.
 
 ### 💻 Web Dashboard Admin
 - 📊 **Real-time Overview:** Tampilan statistik harian kehadiran, alpa, dan telat.
-- 🗺️ **Geospatial Map View:** Melihat bukti koordinat presisi pegawai di atas Peta Google/Leaflet.
-- 📄 **One-Click Payroll Export:** Ekspor laporan presensi lengkap ke Format Excel (`.xlsx`) atau PDF dalam sekali klik.
+- 🗺️ **Bukti Koordinat:** Melihat koordinat dan jarak lokasi absen sebagai bukti audit.
+- 📄 **Laporan Riwayat:** Meninjau dan memfilter riwayat presensi; export payroll masih masuk backlog.
 - 🕵️ **Biometric Moderation:** Reset wajah pegawai jika terindikasi foto palsu/fraud.
 
 ---
@@ -53,7 +53,7 @@ Sistem ini dirancang sangat ringan, tidak membutuhkan bundler kompleks untuk fro
 - **Frontend:** HTML5, CSS3, Vanilla JS, Tailwind CSS (Dashboard)
 - **Backend:** Node.js, Express.js
 - **AI Engine:** face-api.js (TensorFlow.js Core)
-- **Database:** Supabase (PostgreSQL) + PostGIS
+- **Database:** Supabase (PostgreSQL)
 - **Security:** JWT Authentication, Bcrypt
 
 ---
@@ -70,7 +70,7 @@ cd absensi-klinik
 Masuk ke SQL Editor di Supabase Anda dan jalankan script migrasi yang ada di:
 > `backend/database/migration.sql`
 
-Script ini akan otomatis membuatkan tabel: `pengaturan_klinik`, `master_shift`, `pegawai`, `log_absensi`, dan `audit_log` beserta data default admin.
+Script ini akan otomatis membuatkan tabel: `pengaturan_klinik`, `master_shift`, `pegawai`, `log_absensi`, dan `audit_log` beserta pengaturan klinik dan shift default. Script ini tidak membuat akun admin default.
 
 ### 3. Setup Backend
 Masuk ke direktori backend, konfigurasi enviroment, lalu jalankan.
@@ -82,7 +82,12 @@ Salin template konfigurasi:
 ```bash
 cp .env.example .env
 ```
-*(Buka `.env` dan isi `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, dan `JWT_SECRET` milik Anda)*
+*(Buka `.env` dan isi `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `JWT_SECRET`, serta `ALLOWED_ORIGINS` untuk production)*
+
+Buat admin pertama:
+```bash
+npm run create-admin -- --username admin --password "password-kuat-minimal-12" --name "Administrator"
+```
 
 Start server:
 ```bash

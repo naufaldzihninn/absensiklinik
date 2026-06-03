@@ -1,5 +1,5 @@
 // Service Worker — Absensi Klinik Prima Insani PWA
-const CACHE_NAME = 'absensi-kpi-v2';
+const CACHE_NAME = 'absensi-kpi-v8';
 const OFFLINE_URL = '/pegawai/offline.html';
 
 // Core assets to cache for offline shell
@@ -7,6 +7,13 @@ const ASSETS_TO_CACHE = [
     '/pegawai/css/style.css',
     '/pegawai/js/app.js',
     '/pegawai/js/api.js',
+    '/pegawai/js/login.js',
+    '/pegawai/js/offline.js',
+    '/pegawai/js/riwayat.js',
+    '/pegawai/js/profil.js',
+    '/pegawai/js/index.js',
+    '/pegawai/js/register-face.js',
+    '/pegawai/js/absen.js',
     '/pegawai/js/camera.js',
     '/pegawai/js/geolocation.js',
     '/pegawai/js/face.js',

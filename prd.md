@@ -5,16 +5,16 @@
 | Field | Detail |
 |---|---|
 | **Versi** | 1.0.0 |
-| **Status** | Approved for Development |
+| **Status** | Hardening Beta |
 | **Platform** | Progressive Web App (Mobile) & Web Dashboard (Desktop) |
 | **Nama Klinik** | Klinik Prima Insani |
-| **Tanggal** | 8 Maret 2026 |
+| **Tanggal** | 8 Maret 2026; diperbarui 3 Juni 2026 |
 
 ---
 
 ## 1. Executive Summary
 
-Sistem Absensi Cerdas Klinik Prima Insani adalah solusi perangkat lunak end-to-end yang dirancang untuk mendigitalisasi dan mengamankan proses presensi pegawai klinik. Sistem ini memecahkan masalah kecurangan absensi (seperti fake GPS atau "titip absen"), menghilangkan beban administratif HRD dalam mengatur shift, dan secara revolusioner menekan biaya cloud storage hingga mendekati nol melalui pemrosesan Image Recognition di dalam memori (RAM).
+Sistem Absensi Cerdas Klinik Prima Insani adalah solusi perangkat lunak berbasis web yang dirancang untuk mendigitalisasi dan memperkuat proses presensi pegawai klinik. Sistem ini mengurangi risiko kecurangan absensi melalui verifikasi wajah live, validasi radius lokasi, timestamp server, proteksi absen ganda, dan dashboard admin untuk audit operasional.
 
 ---
 
@@ -46,11 +46,11 @@ Membangun ekosistem absensi **tanpa instalasi** berbasis Progressive Web App (PW
 | **Front-End (PWA Pegawai)** | HTML5, CSS3, Vanilla JavaScript |
 | **Front-End (Web Admin)** | HTML5, CSS3, Tailwind CSS |
 | **Back-End (API Server)** | Node.js, Express.js |
-| **AI & Image Processing** | face-api.js (TensorFlow.js), multer (Memory Storage) |
-| **Database (BaaS)** | Supabase (PostgreSQL) + PostGIS |
+| **AI & Image Processing** | face-api.js (TensorFlow.js) di browser, server-side descriptor matching |
+| **Database (BaaS)** | Supabase (PostgreSQL) |
 | **Authentication** | JWT (JSON Web Token) + Bcrypt |
-| **Maps** | Google Maps JavaScript API / Leaflet.js |
-| **Export** | xlsx (SheetJS) untuk Excel, pdfkit / jsPDF untuk PDF |
+| **Maps** | Backlog; saat ini menyimpan koordinat dan jarak |
+| **Export** | Backlog; riwayat presensi tersedia di dashboard |
 
 ### 4.1 Arsitektur Diagram (High-Level)
 
@@ -60,8 +60,8 @@ Membangun ekosistem absensi **tanpa instalasi** berbasis Progressive Web App (PW
 │  (Mobile Browser)   │            │  (API Server)           │
 └─────────────────────┘            │                         │
                                    │  ┌───────────────────┐  │
-┌─────────────────────┐            │  │ face-api.js       │  │
-│  Web Admin          │ ────────── │  │ (RAM Processing)  │  │
+┌─────────────────────┐            │  │ Descriptor Match  │  │
+│  Web Admin          │ ────────── │  │ + Business Rules  │  │
 │  (Desktop Browser)  │            │  └───────────────────┘  │
 └─────────────────────┘            │                         │
                                    └───────────┬─────────────┘
@@ -69,7 +69,6 @@ Membangun ekosistem absensi **tanpa instalasi** berbasis Progressive Web App (PW
                                                ▼
                                    ┌─────────────────────────┐
                                    │  Supabase (PostgreSQL)  │
-                                   │  + PostGIS + Storage    │
                                    └─────────────────────────┘
 ```
 
@@ -83,9 +82,9 @@ Membangun ekosistem absensi **tanpa instalasi** berbasis Progressive Web App (PW
 
 | # | Fitur | Deskripsi |
 |---|---|---|
-| A1 | **Self-Service Biometric Onboarding** | Saat login perdana, sistem mendeteksi ketiadaan data biometrik dan otomatis mengarahkan pegawai untuk menjepret "Foto Master". Data wajah diekstrak menjadi **128 angka vektor** dan disimpan permanen. |
-| A2 | **Strict Live-Capture Camera** | Memaksa perangkat menggunakan kamera depan secara live saat absen (atribut `capture="user"`), menutup celah upload gambar dari galeri. |
-| A3 | **Dynamic Geo-Fencing** | Tombol "Clock-in/Clock-out" terkunci secara dinamis jika koordinat GPS smartphone berada di luar radius toleransi klinik (default: > 50 meter). |
+| A1 | **Self-Service Biometric Onboarding** | Saat login perdana, sistem mendeteksi ketiadaan data biometrik dan mengarahkan pegawai untuk registrasi wajah. Data wajah diekstrak menjadi **128 angka vektor** dan disimpan sebagai descriptor. |
+| A2 | **Strict Live-Capture Camera** | Proses absen memakai stream kamera live di halaman PWA; absensi tidak menerima upload file gambar sebagai input. |
+| A3 | **Dynamic Geo-Fencing** | PWA mengecek lokasi, dan API tetap memvalidasi koordinat server-side sebelum menyimpan absensi. |
 | A4 | **Transparent Dashboard** | Layar utama minimalis menampilkan jam real-time dari server, status kehadiran hari ini, dan riwayat absen personal 30 hari terakhir. |
 | A5 | **Offline Awareness** | PWA mendeteksi status koneksi internet dan menampilkan notifikasi jika sedang offline. Absensi tidak diizinkan saat offline untuk menjaga integritas data geo-fencing dan face matching. |
 | A6 | **PWA Install Prompt** | Menampilkan prompt "Add to Home Screen" agar pegawai dapat mengakses PWA layaknya aplikasi native tanpa melalui app store. |
@@ -98,9 +97,9 @@ Membangun ekosistem absensi **tanpa instalasi** berbasis Progressive Web App (PW
 |---|---|---|
 | B1 | **Smart Auto-Shift Detection** | API mengkategorikan shift otomatis berdasarkan waktu clock-in. Logic: `04:00–11:59 = Shift Pagi (patokan 07:00)`, `12:00–20:00 = Shift Siang (patokan 14:00)`. |
 | B2 | **Auto-Late Calculation** | Menghitung selisih waktu clock-in dengan jam patokan shift untuk memberi cap "Tepat Waktu" atau "Terlambat". |
-| B3 | **On-the-fly Face Matching AI** | Menghitung Euclidean Distance antara vektor wajah selfie harian dengan vektor "Foto Master" (≥ 85% kemiripan = valid). |
-| B4 | **Zero-Storage RAM Processing** | Foto selfie harian hanya ditampung di RAM server selama proses face matching. Setelah selesai, foto dihapus via Garbage Collection. Database murni hanya menyimpan log teks ringkas. |
-| B5 | **Anti-Duplicate Attendance** | API menolak clock-in/clock-out ganda dalam periode shift yang sama untuk mencegah duplikasi data. |
+| B3 | **Server-Enforced Face Matching** | API menghitung Euclidean Distance antara descriptor wajah live dan descriptor master. Match valid saat distance < 0.35. |
+| B4 | **Descriptor-Only Daily Attendance** | Foto selfie harian tidak diarsipkan; absensi mengirim descriptor live, dan database menyimpan descriptor master serta log ringkas. |
+| B5 | **Anti-Duplicate Attendance** | API menolak clock-in/clock-out ganda dalam periode shift yang sama melalui process lock dan unique index harian berbasis WIB. |
 | B6 | **Rate Limiting** | Proteksi endpoint API dari penyalahgunaan (brute force login, spam request) menggunakan express-rate-limit. |
 | B7 | **Server-Side Timestamp** | Waktu absensi diambil dari clock server (bukan dari client) untuk mencegah manipulasi waktu di sisi pegawai. |
 
@@ -112,12 +111,12 @@ Membangun ekosistem absensi **tanpa instalasi** berbasis Progressive Web App (PW
 |---|---|---|
 | C1 | **Real-time Overview** | Dashboard statistik harian (Hadir, Telat, Alpa) dan live-feed timeline pergerakan absen pegawai. |
 | C2 | **Hands-free Employee Management** | Pembuatan akun pegawai baru hanya membutuhkan Nama dan Username. Pendaftaran wajah diserahkan ke pegawai masing-masing. |
-| C3 | **Biometric Moderation & Reset** | Panel untuk meninjau foto selfie perdana pegawai. Terdapat tombol "Reset Wajah" untuk menghapus vektor di database jika terdeteksi pegawai mendaftarkan wajah palsu/orang lain. |
-| C4 | **Geospatial Map View** | Saat mengeklik riwayat absen pegawai, muncul popup peta (Google Maps / Leaflet) yang memvisualisasikan titik presisi lokasi pegawai saat absen beserta skor kemiripan AI. |
-| C5 | **One-Click Payroll Export** | Ekspor data kehadiran terfilter (berdasarkan rentang waktu dan nama) ke format **Excel (.xlsx)** dan/atau **PDF** untuk kebutuhan penggajian. |
+| C3 | **Biometric Moderation & Reset** | Admin dapat mereset descriptor wajah pegawai jika registrasi terindikasi tidak valid. |
+| C4 | **Location Evidence** | Dashboard menampilkan koordinat, jarak lokasi absen, dan skor verifikasi wajah sebagai bukti audit. Tampilan peta interaktif masih backlog. |
+| C5 | **Attendance History Review** | Admin dapat meninjau riwayat presensi. Export Excel/PDF masih backlog. |
 | C6 | **Dynamic Clinic Settings** | Antarmuka untuk mengubah titik koordinat (Lat/Long) pusat klinik dan batas radius meter tanpa menyentuh source code. |
 | C7 | **Audit Log Viewer** | Menampilkan log aktivitas admin (siapa menambah/menghapus pegawai, siapa mereset wajah, kapan setting diubah) untuk akuntabilitas. |
-| C8 | **Bulk Employee Import** | Fitur upload CSV/Excel untuk mendaftarkan banyak pegawai sekaligus, mengurangi input manual satu per satu. |
+| C8 | **Bulk Employee Import** | Backlog untuk upload CSV/Excel. Saat ini pegawai dibuat satu per satu oleh admin. |
 
 ---
 
@@ -155,10 +154,9 @@ sequenceDiagram
     PWA->>API: POST /api/auth/login
     API-->>PWA: Token + flag vektor_wajah = null
     PWA->>PWA: Redirect ke halaman Registrasi Wajah
-    PWA->>PWA: Buka kamera depan → Selfie
-    PWA->>API: POST /api/face/register (foto)
-    API->>API: Ekstrak 128 vektor wajah (face-api.js)
-    API->>DB: UPDATE vektor_wajah + simpan foto_master
+    PWA->>PWA: Buka kamera depan → ekstrak descriptor wajah
+    PWA->>API: POST /api/face/register (descriptor)
+    API->>DB: UPDATE vektor_wajah
     API-->>PWA: Registrasi wajah berhasil ✅
 ```
 
@@ -181,11 +179,10 @@ sequenceDiagram
     alt Dalam Radius
         PWA->>PWA: Tombol absen aktif
         Pegawai->>PWA: Tekan Clock-in → Kamera live → Selfie
-        PWA->>API: POST /api/absensi (foto + koordinat)
-        API->>API: Face matching di RAM
+        PWA->>API: POST /api/absensi/clock-in (descriptor + koordinat)
+        API->>API: Face matching server-side
         API->>API: Auto-detect shift + hitung keterlambatan
-        API->>DB: INSERT log_absensi (teks saja)
-        API->>API: Hapus foto dari RAM (GC)
+        API->>DB: INSERT log_absensi
         API-->>PWA: Absensi berhasil ✅
     else Di Luar Radius
         PWA-->>Pegawai: Tombol absen terkunci 🔒
@@ -203,7 +200,7 @@ sequenceDiagram
 ### Flow 4: Admin Mereview & Reset Wajah
 
 1. Admin membuka Dashboard → Menu Pegawai.
-2. Admin melihat daftar pegawai beserta preview Foto Master.
+2. Admin melihat daftar pegawai beserta status registrasi wajah.
 3. Jika terdeteksi wajah tidak valid → Admin klik "Reset Wajah".
 4. API menghapus `vektor_wajah` dan `foto_master_url` di database.
 5. Pegawai wajib registrasi wajah ulang saat login berikutnya.
@@ -220,7 +217,8 @@ Sistem dirancang dengan **4 tabel utama + 1 tabel audit** agar sangat dinamis da
 |---|---|---|
 | `id` | INT, PK | Auto-increment |
 | `nama_klinik` | VARCHAR | "Klinik Prima Insani" |
-| `titik_koordinat` | VARCHAR | Format: "Lat, Long" |
+| `latitude` | DECIMAL | Latitude pusat klinik |
+| `longitude` | DECIMAL | Longitude pusat klinik |
 | `batas_radius_meter` | INT | Default: 50 |
 | `updated_at` | TIMESTAMP | Terakhir diubah |
 | `updated_by` | UUID, FK | Admin yang mengubah |
@@ -245,14 +243,14 @@ Sistem dirancang dengan **4 tabel utama + 1 tabel audit** agar sangat dinamis da
 | `password` | VARCHAR | Hashed (Bcrypt) |
 | `nama_lengkap` | VARCHAR | Nama tampilan |
 | `role` | VARCHAR | "pegawai" / "admin" — Default: "pegawai" |
-| `foto_master_url` | VARCHAR, Nullable | URL di Supabase Storage (preview admin) |
+| `foto_master_url` | VARCHAR, Nullable | Kolom legacy/opsional; implementasi utama memakai descriptor |
 | `vektor_wajah` | JSONB, Nullable | Array 128 angka dari face-api.js |
-| `status_wajah` | BOOLEAN | Default: true |
+| `status_wajah` | BOOLEAN | Default: false |
 | `is_active` | BOOLEAN | Default: true (soft-delete) |
 | `created_at` | TIMESTAMP | Auto-generate |
 | `updated_at` | TIMESTAMP | Auto-update |
 
-### 8.4 Tabel `log_absensi` (Data Transaksional Zero-Storage)
+### 8.4 Tabel `log_absensi` (Data Transaksional)
 
 | Kolom | Tipe | Keterangan |
 |---|---|---|
@@ -260,11 +258,11 @@ Sistem dirancang dengan **4 tabel utama + 1 tabel audit** agar sangat dinamis da
 | `id_pegawai` | UUID, FK | Referensi ke pegawai |
 | `id_shift` | INT, FK | Diisi otomatis oleh API |
 | `tipe_absen` | VARCHAR | "MASUK" / "PULANG" |
-| `waktu_absen` | TIMESTAMP | Jam presisi server |
+| `waktu_absen` | TIMESTAMPTZ | Jam presisi server |
 | `koordinat_absen` | VARCHAR | "Lat, Long" |
 | `jarak_meter` | DECIMAL | Jarak pegawai dari titik klinik saat absen |
 | `status_kehadiran` | VARCHAR | "Tepat Waktu" / "Terlambat" |
-| `akurasi_wajah` | DECIMAL | Skor kemiripan (e.g. 0.95) |
+| `akurasi_wajah` | DECIMAL | Skor kemiripan descriptor (e.g. 0.95) |
 
 ### 8.5 Tabel `audit_log` (Jejak Aktivitas Admin) — *Baru*
 
@@ -283,7 +281,8 @@ erDiagram
     pengaturan_klinik {
         INT id PK
         VARCHAR nama_klinik
-        VARCHAR titik_koordinat
+        DECIMAL latitude
+        DECIMAL longitude
         INT batas_radius_meter
         TIMESTAMP updated_at
         UUID updated_by FK
@@ -356,25 +355,23 @@ erDiagram
 | POST | `/api/pegawai` | Tambah pegawai baru (Admin only) |
 | PUT | `/api/pegawai/:id` | Update data pegawai (Admin only) |
 | DELETE | `/api/pegawai/:id` | Soft-delete pegawai (Admin only) |
-| POST | `/api/pegawai/import` | Bulk import via CSV/Excel (Admin only) |
 
 ### 9.3 Face Recognition
 
 | Method | Endpoint | Deskripsi |
 |---|---|---|
-| POST | `/api/face/register` | Registrasi Foto Master + ekstrak vektor |
-| POST | `/api/face/match` | Matching wajah selfie vs Foto Master |
+| POST | `/api/face/register` | Registrasi descriptor wajah |
+| POST | `/api/face/match` | Matching descriptor wajah live vs descriptor master |
 | DELETE | `/api/face/reset/:id` | Reset vektor wajah pegawai (Admin only) |
 
 ### 9.4 Absensi
 
 | Method | Endpoint | Deskripsi |
 |---|---|---|
-| POST | `/api/absensi/clock-in` | Clock-in (foto + koordinat) |
-| POST | `/api/absensi/clock-out` | Clock-out (foto + koordinat) |
+| POST | `/api/absensi/clock-in` | Clock-in (descriptor + koordinat) |
+| POST | `/api/absensi/clock-out` | Clock-out (descriptor + koordinat) |
 | GET | `/api/absensi/history` | Riwayat absen pegawai (self/admin) |
 | GET | `/api/absensi/today` | Statistik absen hari ini (Admin) |
-| GET | `/api/absensi/export` | Export ke Excel/PDF (Admin) |
 
 ### 9.5 Settings & Utilities
 
@@ -393,9 +390,9 @@ erDiagram
 
 | Kategori | Requirement |
 |---|---|
-| **Performance** | Face extraction + matching di Node.js harus selesai dalam **≤ 5 detik**. |
+| **Performance** | Face extraction di browser dan matching di API ditargetkan selesai dalam **≤ 5 detik** pada koneksi normal. |
 | **Security** | API wajib menggunakan JWT. Password di-hash dengan Bcrypt (salt rounds ≥ 10). HTTPS wajib di production. |
-| **Cost** | Memanfaatkan sepenuhnya Supabase Free Tier. Cloud storage ditekan seminimal mungkin berkat pemrosesan RAM. |
+| **Cost** | Memanfaatkan Supabase Free Tier; storage ditekan dengan menyimpan descriptor dan log, bukan arsip foto harian. |
 | **Availability** | Target uptime ≥ 99% selama jam operasional klinik (06:00–22:00 WIB). |
 | **Scalability** | Sistem mampu melayani hingga 100 pegawai tanpa degradasi performa. |
 | **Compatibility** | PWA berjalan di Chrome, Safari, Firefox, Edge versi modern (2 tahun terakhir). |
@@ -411,8 +408,8 @@ erDiagram
 |---|---|
 | GPS tidak tersedia / ditolak user | Tampilkan pesan error yang jelas. Tombol absen tetap terkunci. |
 | Kamera tidak tersedia / ditolak user | Tidak bisa melanjutkan proses absen. Tampilkan instruksi cara mengaktifkan izin kamera. |
-| Wajah tidak terdeteksi di foto | API mengembalikan pesan "Wajah tidak terdeteksi, silakan foto ulang". |
-| Kemiripan wajah di bawah threshold (< 85%) | Absen ditolak. Tampilkan pesan "Verifikasi wajah gagal". |
+| Wajah tidak terdeteksi di kamera | PWA menampilkan pesan "Wajah tidak terdeteksi, silakan foto ulang". |
+| Descriptor wajah tidak cocok | Absen ditolak. Tampilkan pesan "Verifikasi wajah gagal". |
 | Pegawai sudah clock-in di shift yang sama | API menolak dengan pesan "Anda sudah melakukan clock-in hari ini". |
 | Internet putus saat proses absen | Tampilkan error timeout/network dan sarankan untuk coba lagi. |
 | Token JWT expired | Auto-redirect ke halaman login. |
@@ -426,9 +423,9 @@ erDiagram
 | Aspek | Detail |
 |---|---|
 | **CORS** | API hanya menerima request dari origin PWA dan Web Admin yang terdaftar. |
-| **Helmet.js** | Mengamankan header HTTP di Express.js. |
-| **Input Validation** | Semua input user divalidasi di server-side (express-validator / Joi). |
-| **File Upload** | Hanya menerima file gambar (JPEG/PNG), max size 5MB, diproses di memory (multer memoryStorage). |
+| **Helmet.js** | Backlog untuk hardening header HTTP tambahan. |
+| **Input Validation** | Input utama divalidasi server-side melalui helper validasi internal. |
+| **File Upload** | Tidak dipakai untuk absensi harian; flow utama memakai descriptor wajah. |
 | **SQL Injection** | Dicegah melalui parameterized queries dari Supabase client library. |
 | **Token Expiry** | Access token berlaku 8 jam (1 shift kerja). Refresh token opsional. |
 
@@ -439,30 +436,30 @@ erDiagram
 ### Fase 1 — MVP (Target: 4 minggu)
 
 - [x] Setup project structure (back-end + front-end)
-- [ ] Database schema di Supabase
-- [ ] Auth system (login, JWT, Bcrypt)
-- [ ] CRUD Pegawai (Web Admin)
-- [ ] Face Registration & Matching (face-api.js)
-- [ ] Geo-fencing + Clock-in/Clock-out
-- [ ] Auto-shift detection + late calculation
-- [ ] Dashboard Admin (statistik hari ini)
-- [ ] Riwayat absen pegawai
+- [x] Database schema di Supabase
+- [x] Auth system (login, JWT, Bcrypt)
+- [x] CRUD Pegawai (Web Admin)
+- [x] Face Registration & Matching (face-api.js descriptor)
+- [x] Geo-fencing + Clock-in/Clock-out
+- [x] Auto-shift detection + late calculation
+- [x] Dashboard Admin (statistik hari ini)
+- [x] Riwayat absen pegawai
+- [x] Audit log admin
+- [x] PWA install prompt & offline page
+- [x] Dynamic clinic settings UI
 
 ### Fase 2 — Enhancement (Target: 2 minggu setelah MVP)
 
 - [ ] Export Excel/PDF
-- [ ] Audit log admin
 - [ ] Bulk import pegawai (CSV)
 - [ ] Geospatial Map View di dashboard
-- [ ] PWA install prompt & offline page
-- [ ] Dynamic clinic settings UI
 
 ### Fase 3 — Future (Opsional)
 
 - [ ] Notifikasi WhatsApp/Telegram saat pegawai terlambat
 - [ ] Multi-klinik (cabang) support
 - [ ] Super Admin role
-- [ ] Integrasi kalender libur nasional
+- [x] Integrasi kalender libur nasional
 - [ ] Laporan bulanan otomatis via email
 - [ ] Dark mode PWA
 
@@ -472,10 +469,10 @@ erDiagram
 
 | Metrik | Target |
 |---|---|
-| Tingkat kecurangan absensi | Turun hingga **~0%** dari sebelumnya |
+| Tingkat kecurangan absensi | Turun signifikan melalui kombinasi face matching, geo-fencing, timestamp server, dan audit log |
 | Waktu proses absensi per pegawai | **≤ 15 detik** (buka app → selesai) |
 | Biaya cloud storage bulanan | **< $1/bulan** (Free Tier Supabase) |
-| Waktu HRD untuk rekap absensi | Turun **80%** (dari manual ke 1-click export) |
+| Waktu HRD untuk rekap absensi | Turun melalui dashboard riwayat dan statistik; export otomatis masuk backlog |
 | Adopsi pegawai dalam 1 bulan | **100%** pegawai aktif |
 
 ---

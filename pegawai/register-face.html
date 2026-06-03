@@ -52,7 +52,7 @@
                         <span class="text-sm">Jangan gunakan foto orang lain</span>
                     </li>
                 </ul>
-                <button class="btn btn-primary btn-block" id="startCameraBtn" onclick="openCamera()">
+                <button class="btn btn-primary btn-block" id="startCameraBtn">
                     Buka Kamera
                 </button>
             </div>
@@ -68,13 +68,13 @@
             </div>
 
             <div class="camera-header">
-                <button class="camera-close-btn" onclick="closeCamera()">✕</button>
+                <button class="camera-close-btn" id="closeCameraBtn">✕</button>
                 <span style="color: white; font-size: 0.85rem; font-weight: 500;">Registrasi Wajah</span>
                 <div style="width: 40px;"></div>
             </div>
 
             <div class="camera-controls">
-                <button class="capture-btn" id="captureBtn" onclick="capturePhoto()"></button>
+                <button class="capture-btn" id="captureBtn"></button>
             </div>
         </div>
 
@@ -93,10 +93,10 @@
             </div>
 
             <div style="display: flex; gap: 12px; width: 100%; max-width: 360px; margin-top: 24px;">
-                <button class="btn btn-secondary" style="flex: 1;" onclick="retakePhoto()">
+                <button class="btn btn-secondary" id="retakePhotoBtn" style="flex: 1;">
                     Ulangi
                 </button>
-                <button class="btn btn-primary" style="flex: 1;" id="confirmBtn" onclick="confirmPhoto()">
+                <button class="btn btn-primary" style="flex: 1;" id="confirmBtn">
                     Konfirmasi
                 </button>
             </div>
@@ -109,7 +109,7 @@
             <p class="text-secondary" style="margin-top: 8px; max-width: 280px;">
                 Wajah Anda telah terdaftar. Sekarang Anda bisa melakukan absensi.
             </p>
-            <button class="btn btn-primary btn-lg" style="margin-top: 32px;" onclick="goToDashboard()">
+            <button class="btn btn-primary btn-lg" id="dashboardBtn" style="margin-top: 32px;">
                 Mulai Absensi
             </button>
         </div>
@@ -120,134 +120,7 @@
     <script src="js/camera.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
     <script src="js/face.js"></script>
-    <script>
-        // Auth guard
-        if (!API.isAuthenticated()) { window.location.href = 'login.html'; }
-
-        // If face already registered, go to dashboard
-        const session = API.getSession();
-        if (session && session.has_vektor) { window.location.href = 'index.html'; }
-
-        let capturedPhoto = null;
-        let extractedDescriptor = null;
-
-        // Pre-load AI models while user reads instructions
-        async function preloadModels() {
-            const btn = document.getElementById('startCameraBtn');
-            btn.textContent = '⏳ Memuat AI Model...';
-            btn.disabled = true;
-            try {
-                // Wait for face-api.js script to load
-                await new Promise((resolve) => {
-                    const check = setInterval(() => {
-                        if (typeof faceapi !== 'undefined') { clearInterval(check); resolve(); }
-                    }, 200);
-                    setTimeout(() => { clearInterval(check); resolve(); }, 15000);
-                });
-                await FaceAI.load((msg) => {
-                    btn.textContent = '⏳ ' + msg;
-                });
-                btn.textContent = 'Buka Kamera';
-                btn.disabled = false;
-            } catch (err) {
-                btn.textContent = 'Buka Kamera';
-                btn.disabled = false;
-                console.warn('Model pre-load failed, will retry:', err.message);
-            }
-        }
-        preloadModels();
-
-        async function openCamera() {
-            try {
-                // Ensure models are loaded before proceeding
-                if (!FaceAI.isReady()) {
-                    App.showToast('Memuat model AI, tunggu sebentar...', 'info');
-                    await FaceAI.load();
-                }
-                const video = document.getElementById('cameraFeed');
-                await Camera.start(video);
-                document.getElementById('stepInstruction').style.display = 'none';
-                document.getElementById('cameraView').style.display = 'flex';
-            } catch (err) {
-                App.showToast(err.message, 'error');
-            }
-        }
-
-        function closeCamera() {
-            Camera.stop();
-            document.getElementById('cameraView').style.display = 'none';
-            document.getElementById('stepInstruction').style.display = 'flex';
-        }
-
-        async function capturePhoto() {
-            try {
-                capturedPhoto = Camera.capture();
-                Camera.stop();
-                document.getElementById('facePreview').src = capturedPhoto;
-                document.getElementById('cameraView').style.display = 'none';
-                document.getElementById('stepConfirm').style.display = 'flex';
-
-                // Auto-detect face in captured photo
-                const confirmBtn = document.getElementById('confirmBtn');
-                confirmBtn.disabled = true;
-                confirmBtn.textContent = '🔍 Mendeteksi wajah...';
-
-                const result = await FaceAI.detectFromImage(capturedPhoto);
-                if (result) {
-                    extractedDescriptor = result.descriptor;
-                    confirmBtn.textContent = `✓ Wajah Terdeteksi (${(result.score * 100).toFixed(0)}%)`;
-                    confirmBtn.disabled = false;
-                    confirmBtn.style.background = '';
-                } else {
-                    extractedDescriptor = null;
-                    confirmBtn.textContent = '❌ Wajah Tidak Terdeteksi';
-                    confirmBtn.disabled = true;
-                    App.showToast('Wajah tidak terdeteksi. Silakan foto ulang dengan pencahayaan lebih baik.', 'error');
-                }
-            } catch (err) {
-                App.showToast(err.message, 'error');
-            }
-        }
-
-        function retakePhoto() {
-            capturedPhoto = null;
-            extractedDescriptor = null;
-            document.getElementById('stepConfirm').style.display = 'none';
-            document.getElementById('stepInstruction').style.display = 'flex';
-        }
-
-        async function confirmPhoto() {
-            if (!extractedDescriptor) {
-                App.showToast('Wajah belum terdeteksi. Silakan foto ulang.', 'error');
-                return;
-            }
-
-            const confirmBtn = document.getElementById('confirmBtn');
-            confirmBtn.disabled = true;
-            confirmBtn.textContent = '⏳ Mendaftarkan...';
-
-            try {
-                // Send real 128-dim face descriptor to backend
-                await API.registerFace(extractedDescriptor);
-
-                // Update session
-                const updatedSession = { ...API.getSession(), has_vektor: true, status_wajah: true };
-                const storage = localStorage.getItem('absensi_token') ? localStorage : sessionStorage;
-                storage.setItem('absensi_session', JSON.stringify(updatedSession));
-
-                document.getElementById('stepConfirm').style.display = 'none';
-                document.getElementById('stepSuccess').style.display = 'flex';
-            } catch (err) {
-                App.showToast(err.message, 'error');
-                confirmBtn.disabled = false;
-                confirmBtn.textContent = 'Konfirmasi';
-            }
-        }
-
-        function goToDashboard() {
-            window.location.href = 'index.html';
-        }
-    </script>
+    <script src="js/register-face.js"></script>
 </body>
 
 </html>

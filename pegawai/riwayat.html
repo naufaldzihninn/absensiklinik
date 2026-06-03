@@ -28,9 +28,9 @@
 
             <!-- Month Selector -->
             <div class="month-selector">
-                <button class="month-nav-btn" id="prevMonth" onclick="changeMonth(-1)">‹</button>
+                <button class="month-nav-btn" id="prevMonth">‹</button>
                 <span class="month-label" id="monthLabel">Maret 2026</span>
-                <button class="month-nav-btn" id="nextMonth" onclick="changeMonth(1)">›</button>
+                <button class="month-nav-btn" id="nextMonth">›</button>
             </div>
 
             <!-- Monthly Stats -->
@@ -75,104 +75,7 @@
 
     <script src="js/app.js"></script>
     <script src="js/api.js"></script>
-    <script>
-        // Auth guard
-        if (!API.isAuthenticated()) { window.location.href = 'login.html'; }
-
-        const months = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-            'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
-
-        let currentYear = new Date().getFullYear();
-        let currentMonth = new Date().getMonth();
-        let allRecords = [];
-
-        App.setActiveNav('riwayat');
-        loadAllHistory();
-
-        async function loadAllHistory() {
-            try {
-                const result = await API.getHistory(365);
-                allRecords = result.data || [];
-                renderMonth();
-            } catch (err) {
-                console.error('Load history error:', err);
-                allRecords = [];
-                renderMonth();
-            }
-        }
-
-        function changeMonth(delta) {
-            currentMonth += delta;
-            if (currentMonth > 11) { currentMonth = 0; currentYear++; }
-            else if (currentMonth < 0) { currentMonth = 11; currentYear--; }
-
-            const now = new Date();
-            if (currentYear > now.getFullYear() ||
-                (currentYear === now.getFullYear() && currentMonth > now.getMonth())) {
-                currentMonth = now.getMonth(); currentYear = now.getFullYear(); return;
-            }
-            renderMonth();
-        }
-
-        function renderMonth() {
-            document.getElementById('monthLabel').textContent = `${months[currentMonth]} ${currentYear}`;
-
-            // Filter records for this month
-            const monthRecords = allRecords.filter(r => {
-                const d = new Date(r.waktu_absen);
-                return d.getFullYear() === currentYear && d.getMonth() === currentMonth;
-            });
-
-            // Calculate stats
-            const clockIns = monthRecords.filter(r => r.tipe_absen === 'MASUK');
-            const hadir = clockIns.length;
-            const telat = clockIns.filter(r => r.status_kehadiran === 'Terlambat').length;
-            document.getElementById('statHadir').textContent = hadir;
-            document.getElementById('statTelat').textContent = telat;
-            document.getElementById('statAlpa').textContent = 0; // Can be calculated with shift schedule
-
-            // Group by date
-            const groupedByDate = {};
-            monthRecords.forEach(r => {
-                const dateKey = new Date(r.waktu_absen).toISOString().split('T')[0];
-                if (!groupedByDate[dateKey]) groupedByDate[dateKey] = [];
-                groupedByDate[dateKey].push(r);
-            });
-
-            const sortedDates = Object.keys(groupedByDate).sort().reverse();
-            const container = document.getElementById('attendanceList');
-
-            if (sortedDates.length === 0) {
-                container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📋</div><p class="empty-state-text">Tidak ada data absensi bulan ini</p></div>`;
-                return;
-            }
-
-            container.innerHTML = sortedDates.map(dateKey => {
-                const dayRecords = groupedByDate[dateKey];
-                const clockIn = dayRecords.find(r => r.tipe_absen === 'MASUK');
-                const clockOut = dayRecords.find(r => r.tipe_absen === 'PULANG');
-                const dateDisplay = App.formatRecordDate(dateKey + 'T00:00:00');
-                const statusClass = clockIn && clockIn.status_kehadiran === 'Tepat Waktu' ? 'success' : 'warning';
-                const statusText = clockIn ? clockIn.status_kehadiran : '-';
-                const shiftName = clockIn ? (clockIn.nama_shift || '-') : '-';
-
-                return `
-          <div class="glass-card-sm" style="margin-bottom: 10px;">
-            <div class="flex items-center justify-between mb-sm">
-              <span class="text-sm" style="font-weight: 600;">${dateDisplay}</span>
-              <span class="badge badge-${statusClass}">${statusText}</span>
-            </div>
-            <div class="flex items-center justify-between" style="gap: 16px;">
-              <div><div class="text-xs text-muted">Shift</div><div class="text-sm" style="font-weight: 500;">${shiftName}</div></div>
-              <div style="text-align: center;"><div class="text-xs text-muted">Masuk</div><div class="text-sm" style="font-weight: 600; color: var(--success);">${clockIn ? App.formatTime(clockIn.waktu_absen) : '-'}</div></div>
-              <div style="text-align: center;"><div class="text-xs text-muted">Pulang</div><div class="text-sm" style="font-weight: 600; color: var(--info);">${clockOut ? App.formatTime(clockOut.waktu_absen) : '-'}</div></div>
-              <div style="text-align: right;"><div class="text-xs text-muted">AI</div><div class="text-sm" style="font-weight: 600;">${clockIn ? ((clockIn.akurasi_wajah || 0) * 100).toFixed(0) + '%' : '-'}</div></div>
-            </div>
-          </div>
-        `;
-            }).join('');
-        }
-    </script>
+    <script src="js/riwayat.js"></script>
 </body>
 
 </html>

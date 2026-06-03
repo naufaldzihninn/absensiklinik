@@ -31,13 +31,13 @@
         </div>
 
         <div class="camera-header">
-            <button class="camera-close-btn" onclick="goBack()">←</button>
+            <button class="camera-close-btn" id="backBtn">←</button>
             <span style="color: white; font-size: 0.85rem; font-weight: 600;" id="absenTypeLabel">Clock In</span>
             <div style="width: 40px;"></div>
         </div>
 
         <div class="camera-controls">
-            <button class="capture-btn" id="captureBtn" onclick="captureAndVerify()"></button>
+            <button class="capture-btn" id="captureBtn"></button>
         </div>
     </div>
 
@@ -72,7 +72,7 @@
             </div>
         </div>
 
-        <button class="btn btn-primary btn-lg" style="margin-top: 24px;" onclick="goToDashboard()">
+        <button class="btn btn-primary btn-lg" id="successDashboardBtn" style="margin-top: 24px;">
             Kembali ke Beranda
         </button>
     </div>
@@ -85,8 +85,8 @@
             Wajah tidak cocok dengan data terdaftar. Silakan coba lagi.
         </p>
         <div style="display: flex; gap: 12px; margin-top: 24px;">
-            <button class="btn btn-secondary" onclick="goToDashboard()">Kembali</button>
-            <button class="btn btn-primary" onclick="retryCapture()">Coba Lagi</button>
+            <button class="btn btn-secondary" id="failDashboardBtn">Kembali</button>
+            <button class="btn btn-primary" id="retryCaptureBtn">Coba Lagi</button>
         </div>
     </div>
 
@@ -96,160 +96,7 @@
     <script src="js/geolocation.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
     <script src="js/face.js"></script>
-    <script>
-        // Auth guard
-        if (!API.isAuthenticated()) {
-            window.location.href = 'login.html';
-        }
-
-        const params = new URLSearchParams(window.location.search);
-        const absenType = params.get('type') || 'masuk';
-        const isMasuk = absenType === 'masuk';
-
-        // Set label
-        document.getElementById('absenTypeLabel').textContent = isMasuk ? 'Clock In' : 'Clock Out';
-
-        // Start camera + load AI models in parallel
-        initCamera();
-
-        async function initCamera() {
-            try {
-                const video = document.getElementById('cameraFeed');
-                await Camera.start(video);
-
-                // Load face AI models in background
-                waitForFaceApi().then(() => {
-                    FaceAI.load((msg) => console.log('[FaceAI]', msg));
-                }).catch(err => console.warn('Model load:', err.message));
-            } catch (err) {
-                App.showToast(err.message, 'error');
-                setTimeout(() => goBack(), 2000);
-            }
-        }
-
-        function waitForFaceApi() {
-            return new Promise((resolve, reject) => {
-                if (typeof faceapi !== 'undefined') return resolve();
-                const check = setInterval(() => {
-                    if (typeof faceapi !== 'undefined') { clearInterval(check); resolve(); }
-                }, 200);
-                setTimeout(() => { clearInterval(check); reject(new Error('face-api timeout')); }, 15000);
-            });
-        }
-
-        async function captureAndVerify() {
-            try {
-                // 1. Ensure models are loaded
-                if (!FaceAI.isReady()) {
-                    App.showToast('Memuat model AI, tunggu sebentar...', 'info');
-                    await waitForFaceApi();
-                    await FaceAI.load();
-                }
-
-                // 2. Detect face from live video BEFORE stopping camera
-                const video = document.getElementById('cameraFeed');
-                document.getElementById('processingText').textContent = 'Mendeteksi wajah...';
-
-                const faceResult = await FaceAI.detectFromVideo(video);
-
-                // Stop camera after detection
-                Camera.stop();
-
-                // Show processing screen
-                document.getElementById('cameraScreen').style.display = 'none';
-                document.getElementById('processingScreen').style.display = 'flex';
-
-                if (!faceResult) {
-                    showFailResult('Wajah tidak terdeteksi. Pastikan wajah terlihat jelas dan pencahayaan cukup.');
-                    return;
-                }
-
-                // 3. Send descriptor to backend for matching
-                document.getElementById('processingText').textContent = 'Membandingkan data biometrik...';
-                const matchResult = await API.matchFace(faceResult.descriptor);
-
-                if (!matchResult.match) {
-                    const scorePercent = (matchResult.score * 100).toFixed(1);
-                    showFailResult(`Verifikasi wajah gagal (kecocokan: ${scorePercent}%). Wajah tidak sesuai dengan data terdaftar.`);
-                    return;
-                }
-
-                // 4. Face matched! Proceed with clock-in/out
-                document.getElementById('processingText').textContent = 'Menyimpan data absensi...';
-
-                // Get GPS position
-                let gps = { latitude: -6.2, longitude: 106.816666 };
-                try {
-                    const pos = await Geolocation.getCurrentPosition();
-                    gps = { latitude: pos.latitude, longitude: pos.longitude };
-                } catch (e) { /* use default */ }
-
-                const akurasi = matchResult.score;
-                const result = isMasuk
-                    ? await API.clockIn(gps.latitude, gps.longitude, akurasi)
-                    : await API.clockOut(gps.latitude, gps.longitude, akurasi);
-
-                showSuccessResult(result, akurasi);
-
-            } catch (err) {
-                showFailResult(err.message);
-            }
-        }
-
-        function showSuccessResult(result, akurasi) {
-            const record = result.data;
-
-            document.getElementById('successTitle').textContent =
-                isMasuk ? 'Clock In Berhasil! ✅' : 'Clock Out Berhasil! ✅';
-            document.getElementById('successDetail').textContent =
-                isMasuk ? 'Selamat bekerja, semoga harimu menyenangkan!' : 'Terima kasih, selamat beristirahat!';
-
-            document.getElementById('resultShift').textContent = result.shift ? `Shift ${result.shift}` : '-';
-            document.getElementById('resultTime').textContent = App.formatTime(record.waktu_absen);
-
-            const statusEl = document.getElementById('resultStatus');
-            if (isMasuk) {
-                const status = record.status_kehadiran || result.status;
-                if (status === 'Terlambat') {
-                    statusEl.innerHTML = '<span class="badge badge-warning">Terlambat</span>';
-                } else {
-                    statusEl.innerHTML = '<span class="badge badge-success">Tepat Waktu</span>';
-                }
-            } else {
-                statusEl.innerHTML = '<span class="badge badge-success">Selesai</span>';
-            }
-
-            document.getElementById('resultAkurasi').textContent =
-                `${((akurasi || record.akurasi_wajah || 0) * 100).toFixed(1)}%`;
-
-            document.getElementById('processingScreen').style.display = 'none';
-            document.getElementById('successScreen').style.display = 'flex';
-        }
-
-        function showFailResult(message) {
-            document.getElementById('failDetail').textContent =
-                message || 'Wajah tidak cocok dengan data terdaftar. Silakan coba lagi.';
-            document.getElementById('processingScreen').style.display = 'none';
-            document.getElementById('failScreen').style.display = 'flex';
-        }
-
-        function retryCapture() {
-            document.getElementById('failScreen').style.display = 'none';
-            document.getElementById('successScreen').style.display = 'none';
-            document.getElementById('processingScreen').style.display = 'none';
-            document.getElementById('cameraScreen').style.display = 'flex';
-            initCamera();
-        }
-
-        function goBack() {
-            Camera.stop();
-            window.location.href = 'index.html';
-        }
-
-        function goToDashboard() {
-            window.location.href = 'index.html';
-        }
-    </script>
+    <script src="js/absen.js"></script>
 </body>
 
 </html>

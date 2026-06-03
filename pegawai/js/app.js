@@ -186,10 +186,13 @@ const App = (() => {
                     <div style="font-size:0.75rem;color:#94A3B8">Akses lebih cepat dari home screen</div>
                 </div>
             </div>
-            <button onclick="App.installPWA()" style="padding:8px 16px;background:linear-gradient(135deg,#0D9488,#0F766E);color:white;border:none;border-radius:8px;font-weight:600;font-size:0.8rem;cursor:pointer">Install</button>
-            <button onclick="this.parentElement.remove()" style="padding:4px 8px;background:none;border:none;color:#64748B;cursor:pointer;font-size:1.1rem">✕</button>
+            <button class="pwa-install-btn" style="padding:8px 16px;background:linear-gradient(135deg,#0D9488,#0F766E);color:white;border:none;border-radius:8px;font-weight:600;font-size:0.8rem;cursor:pointer">Install</button>
+            <button class="pwa-dismiss-btn" style="padding:4px 8px;background:none;border:none;color:#64748B;cursor:pointer;font-size:1.1rem">✕</button>
         `;
         document.body.appendChild(banner);
+
+        banner.querySelector('.pwa-install-btn')?.addEventListener('click', installPWA);
+        banner.querySelector('.pwa-dismiss-btn')?.addEventListener('click', () => banner.remove());
     }
 
     async function installPWA() {

@@ -6,6 +6,7 @@ const express = require('express');
 const router = express.Router();
 const supabase = require('../config/supabase');
 const { verifyToken, requireRole } = require('../middleware/auth');
+const { cleanString, cleanNumber, cleanInteger, cleanTime, cleanLimit, cleanOffset } = require('../utils/validation');
 
 // All routes require authentication
 router.use(verifyToken);
@@ -40,10 +41,30 @@ router.get('/settings', async (req, res) => {
 router.put('/settings', requireRole('admin'), async (req, res) => {
     try {
         const updates = {};
-        if (req.body.nama_klinik) updates.nama_klinik = req.body.nama_klinik;
-        if (req.body.latitude !== undefined) updates.latitude = req.body.latitude;
-        if (req.body.longitude !== undefined) updates.longitude = req.body.longitude;
-        if (req.body.batas_radius_meter !== undefined) updates.batas_radius_meter = req.body.batas_radius_meter;
+        if (req.body.nama_klinik !== undefined) {
+            const nama = cleanString(req.body.nama_klinik, 255);
+            if (!nama) return res.status(400).json({ error: 'Nama klinik tidak valid.' });
+            updates.nama_klinik = nama;
+        }
+
+        if (req.body.latitude !== undefined) {
+            const latitude = cleanNumber(req.body.latitude, -90, 90);
+            if (latitude === null) return res.status(400).json({ error: 'Latitude tidak valid.' });
+            updates.latitude = latitude;
+        }
+
+        if (req.body.longitude !== undefined) {
+            const longitude = cleanNumber(req.body.longitude, -180, 180);
+            if (longitude === null) return res.status(400).json({ error: 'Longitude tidak valid.' });
+            updates.longitude = longitude;
+        }
+
+        if (req.body.batas_radius_meter !== undefined) {
+            const radius = cleanInteger(req.body.batas_radius_meter, 5, 5000);
+            if (radius === null) return res.status(400).json({ error: 'Radius harus angka 5-5000 meter.' });
+            updates.batas_radius_meter = radius;
+        }
+
         updates.updated_by = req.user.id_pegawai;
         updates.updated_at = new Date().toISOString();
 
@@ -97,14 +118,46 @@ router.get('/shift', async (req, res) => {
  */
 router.put('/shift/:id', requireRole('admin'), async (req, res) => {
     try {
-        const { id } = req.params;
+        const id = cleanInteger(req.params.id, 1, 9999);
+        if (id === null) {
+            return res.status(400).json({ error: 'ID shift tidak valid.' });
+        }
+
         const updates = {};
 
-        if (req.body.nama_shift) updates.nama_shift = req.body.nama_shift;
-        if (req.body.batas_jam_mulai_scan) updates.batas_jam_mulai_scan = req.body.batas_jam_mulai_scan;
-        if (req.body.batas_jam_akhir_scan) updates.batas_jam_akhir_scan = req.body.batas_jam_akhir_scan;
-        if (req.body.jam_masuk_ideal) updates.jam_masuk_ideal = req.body.jam_masuk_ideal;
-        if (req.body.jam_pulang_ideal) updates.jam_pulang_ideal = req.body.jam_pulang_ideal;
+        if (req.body.nama_shift !== undefined) {
+            const nama = cleanString(req.body.nama_shift, 50);
+            if (!nama) return res.status(400).json({ error: 'Nama shift tidak valid.' });
+            updates.nama_shift = nama;
+        }
+
+        if (req.body.batas_jam_mulai_scan !== undefined) {
+            const time = cleanTime(req.body.batas_jam_mulai_scan);
+            if (!time) return res.status(400).json({ error: 'Batas jam mulai scan tidak valid.' });
+            updates.batas_jam_mulai_scan = time;
+        }
+
+        if (req.body.batas_jam_akhir_scan !== undefined) {
+            const time = cleanTime(req.body.batas_jam_akhir_scan);
+            if (!time) return res.status(400).json({ error: 'Batas jam akhir scan tidak valid.' });
+            updates.batas_jam_akhir_scan = time;
+        }
+
+        if (req.body.jam_masuk_ideal !== undefined) {
+            const time = cleanTime(req.body.jam_masuk_ideal);
+            if (!time) return res.status(400).json({ error: 'Jam masuk ideal tidak valid.' });
+            updates.jam_masuk_ideal = time;
+        }
+
+        if (req.body.jam_pulang_ideal !== undefined) {
+            const time = cleanTime(req.body.jam_pulang_ideal);
+            if (!time) return res.status(400).json({ error: 'Jam pulang ideal tidak valid.' });
+            updates.jam_pulang_ideal = time;
+        }
+
+        if (Object.keys(updates).length === 0) {
+            return res.status(400).json({ error: 'Tidak ada data yang diubah.' });
+        }
 
         const { data, error } = await supabase
             .from('master_shift')
@@ -138,8 +191,8 @@ router.put('/shift/:id', requireRole('admin'), async (req, res) => {
  */
 router.get('/audit-log', requireRole('admin'), async (req, res) => {
     try {
-        const limit = parseInt(req.query.limit) || 50;
-        const offset = parseInt(req.query.offset) || 0;
+        const limit = cleanLimit(req.query.limit, 50, 200);
+        const offset = cleanOffset(req.query.offset);
 
         let query = supabase
             .from('audit_log')

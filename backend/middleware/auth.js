@@ -7,11 +7,15 @@ const supabase = require('../config/supabase');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
+if (!JWT_SECRET) {
+    throw new Error('JWT_SECRET harus diisi di environment.');
+}
+
 /**
  * Verify JWT token from Authorization header
  * Attaches decoded user data to req.user
  */
-function verifyToken(req, res, next) {
+async function verifyToken(req, res, next) {
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -22,7 +26,27 @@ function verifyToken(req, res, next) {
 
     try {
         const decoded = jwt.verify(token, JWT_SECRET);
-        req.user = decoded;
+
+        const { data: user, error } = await supabase
+            .from('pegawai')
+            .select('id_pegawai, username, nama_lengkap, role, is_active')
+            .eq('id_pegawai', decoded.id_pegawai)
+            .single();
+
+        if (error || !user) {
+            return res.status(401).json({ error: 'Akun tidak ditemukan. Silakan login ulang.' });
+        }
+
+        if (!user.is_active) {
+            return res.status(403).json({ error: 'Akun Anda telah dinonaktifkan. Hubungi admin.' });
+        }
+
+        req.user = {
+            id_pegawai: user.id_pegawai,
+            username: user.username,
+            nama_lengkap: user.nama_lengkap,
+            role: user.role
+        };
         next();
     } catch (err) {
         if (err.name === 'TokenExpiredError') {

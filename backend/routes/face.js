@@ -7,6 +7,7 @@ const express = require('express');
 const router = express.Router();
 const supabase = require('../config/supabase');
 const { verifyToken, requireRole } = require('../middleware/auth');
+const { normalizeDescriptor, compareDescriptors } = require('../utils/face-match');
 
 // All routes require authentication
 router.use(verifyToken);
@@ -26,11 +27,8 @@ router.post('/register', async (req, res) => {
         const { descriptor } = req.body;
         const userId = req.user.id_pegawai;
 
-        if (!descriptor || !Array.isArray(descriptor)) {
-            return res.status(400).json({ error: 'Data vektor wajah tidak valid.' });
-        }
-
-        if (descriptor.length !== 128) {
+        const normalizedDescriptor = normalizeDescriptor(descriptor);
+        if (!normalizedDescriptor) {
             return res.status(400).json({ error: 'Vektor wajah harus 128 dimensi.' });
         }
 
@@ -38,7 +36,7 @@ router.post('/register', async (req, res) => {
         const { data, error } = await supabase
             .from('pegawai')
             .update({
-                vektor_wajah: descriptor,
+                vektor_wajah: normalizedDescriptor,
                 status_wajah: true
             })
             .eq('id_pegawai', userId)
@@ -69,7 +67,8 @@ router.post('/match', async (req, res) => {
         const { descriptor } = req.body;
         const userId = req.user.id_pegawai;
 
-        if (!descriptor || !Array.isArray(descriptor) || descriptor.length !== 128) {
+        const normalizedDescriptor = normalizeDescriptor(descriptor);
+        if (!normalizedDescriptor) {
             return res.status(400).json({ error: 'Data vektor wajah tidak valid.' });
         }
 
@@ -84,26 +83,12 @@ router.post('/match', async (req, res) => {
             return res.status(400).json({ error: 'Wajah belum terdaftar.' });
         }
 
-        // Calculate Euclidean distance between descriptors
-        const master = pegawai.vektor_wajah;
-        let sum = 0;
-        for (let i = 0; i < 128; i++) {
-            sum += (descriptor[i] - master[i]) ** 2;
+        const result = compareDescriptors(normalizedDescriptor, pegawai.vektor_wajah);
+        if (!result) {
+            return res.status(400).json({ error: 'Data vektor wajah tersimpan tidak valid.' });
         }
-        const distance = Math.sqrt(sum);
 
-        // Convert distance to similarity score (0-1)
-        // Lower distance = higher similarity
-        // Threshold 0.4 = requires ~60% similarity (more secure than default 0.6)
-        const score = Math.max(0, 1 - distance);
-        const match = distance < 0.35; // tightened: ~65% min displayed score
-
-        res.json({
-            match,
-            score: parseFloat(score.toFixed(4)),
-            distance: parseFloat(distance.toFixed(4)),
-            threshold: 0.35
-        });
+        res.json(result);
 
     } catch (err) {
         console.error('Face match error:', err);

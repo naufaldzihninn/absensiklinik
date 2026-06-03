@@ -11,7 +11,6 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
         rel="stylesheet">
-    <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
     <link rel="stylesheet" href="css/admin.css">
 </head>
@@ -129,94 +128,7 @@
     <script src="js/api.js"></script>
     <script src="js/admin-app.js"></script>
     <script src="js/charts.js"></script>
-    <script>
-        if (!AdminAPI.isAuthenticated()) { window.location.href = 'login.html'; }
-
-        // Render layout
-        document.getElementById('sidebarContainer').innerHTML = AdminApp.renderSidebar('dashboard');
-        document.getElementById('topBarContainer').innerHTML = AdminApp.renderTopBar('Dashboard');
-
-        loadDashboard();
-
-        async function loadDashboard() {
-            try {
-                const result = await AdminAPI.getTodayStats();
-                const stats = result.stats;
-                document.getElementById('statTotal').textContent = stats.totalPegawai;
-                document.getElementById('statHadir').textContent = stats.hadir;
-                document.getElementById('statTelat').textContent = stats.terlambat;
-                document.getElementById('statAlpa').textContent = stats.alpa;
-
-                // Charts
-                Charts.renderAttendanceDonut('donutChart', {
-                    tepatWaktu: stats.tepat_waktu ?? 0,
-                    telat: stats.terlambat ?? 0,
-                    alpa: stats.alpa ?? 0
-                });
-
-                // Weekly trend chart
-                try {
-                    const trendResult = await AdminAPI.getWeeklyTrend();
-                    Charts.renderWeeklyBar('barChart', trendResult.data || []);
-                } catch (e) {
-                    Charts.renderWeeklyBar('barChart', []);
-                }
-
-                // Timeline
-                renderTimeline(result.data || []);
-            } catch (err) {
-                console.error('Dashboard load error:', err);
-            }
-
-            // Holiday check
-            try {
-                const holidayCheck = await AdminAPI.checkHoliday();
-                if (holidayCheck.isHoliday) {
-                    const banner = document.getElementById('adminHolidayBanner');
-                    banner.style.display = 'block';
-                    document.getElementById('adminHolidayName').textContent = holidayCheck.name;
-                }
-
-                // Show next holiday
-                const holidays = await AdminAPI.getHolidays();
-                const today = new Date().toISOString().split('T')[0];
-                const next = (holidays.data || []).find(h => h.date > today);
-                if (next) {
-                    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
-                    const d = new Date(next.date + 'T00:00:00');
-                    document.getElementById('adminUpcomingList').textContent =
-                        `Libur berikutnya: ${next.name} (${d.getDate()} ${months[d.getMonth()]})`;
-                }
-            } catch (err) { console.warn('Holiday:', err); }
-        }
-
-        function renderTimeline(records) {
-            const container = document.getElementById('timeline');
-            const recent = records.slice(0, 10);
-
-            if (recent.length === 0) {
-                container.innerHTML = '<p style="color: #94A3B8; font-size: 0.875rem;">Belum ada aktivitas hari ini</p>';
-                return;
-            }
-
-            container.innerHTML = recent.map(r => {
-                const isMasuk = r.tipe_absen === 'MASUK';
-                const dotColor = isMasuk ? (r.status_kehadiran === 'Terlambat' ? 'amber' : 'green') : 'blue';
-                const label = isMasuk ? 'Clock In' : 'Clock Out';
-                const statusText = isMasuk ? ` — ${r.status_kehadiran}` : '';
-
-                return `
-          <div class="timeline-item">
-            <div class="timeline-dot ${dotColor}"></div>
-            <div class="timeline-content">
-              <strong>${r.nama_pegawai || '-'}</strong> ${label}${statusText}
-            </div>
-            <div class="timeline-time">${AdminApp.formatTime(r.waktu_absen)}</div>
-          </div>
-        `;
-            }).join('');
-        }
-    </script>
+    <script src="js/dashboard.js"></script>
 </body>
 
 </html>

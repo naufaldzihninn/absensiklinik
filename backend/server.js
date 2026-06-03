@@ -6,21 +6,59 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+const isProduction = process.env.NODE_ENV === 'production';
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
+    .split(',')
+    .map(origin => origin.trim())
+    .filter(Boolean);
+
+app.disable('x-powered-by');
 
 // ── Middleware ──
+app.use(helmet({
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: [
+                "'self'",
+                "https://cdn.jsdelivr.net",
+                "https://unpkg.com",
+                "https://cdnjs.cloudflare.com"
+            ],
+            scriptSrcAttr: ["'none'"],
+            workerSrc: ["'self'"],
+            styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://unpkg.com"],
+            fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
+            imgSrc: ["'self'", "data:", "blob:", "https://*.tile.openstreetmap.org"],
+            mediaSrc: ["'self'", "blob:"],
+            connectSrc: ["'self'", "https://cdn.jsdelivr.net"],
+            objectSrc: ["'none'"],
+            baseUri: ["'self'"],
+            frameAncestors: ["'none'"],
+            formAction: ["'self'"]
+        }
+    },
+    crossOriginEmbedderPolicy: false
+}));
+
 app.use(cors({
-    origin: '*', // Allow all origins in development
+    origin: (origin, callback) => {
+        if (!origin) return callback(null, true);
+        if (!isProduction) return callback(null, true);
+        return callback(null, allowedOrigins.includes(origin));
+    },
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-app.use(express.json({ limit: '10mb' })); // Allow large payloads for face photos
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '100kb' }));
 
 // Rate limiting
 const limiter = rateLimit({
@@ -39,10 +77,19 @@ const authLimiter = rateLimit({
 
 // ── Serve Frontend Static Files ──
 const frontendRoot = path.join(__dirname, '..');
-app.use('/pegawai', express.static(path.join(frontendRoot, 'pegawai')));
-app.use('/admin', express.static(path.join(frontendRoot, 'admin')));
-app.use('/shared', express.static(path.join(frontendRoot, 'shared')));
-app.use(express.static(frontendRoot, { index: 'index.html' }));
+const staticOptions = {
+    etag: true,
+    maxAge: isProduction ? '1h' : 0,
+    setHeaders: (res, filePath) => {
+        if (filePath.endsWith('.html')) {
+            res.setHeader('Cache-Control', 'no-store');
+        }
+    }
+};
+app.use('/pegawai', express.static(path.join(frontendRoot, 'pegawai'), staticOptions));
+app.use('/admin', express.static(path.join(frontendRoot, 'admin'), staticOptions));
+app.use('/shared', express.static(path.join(frontendRoot, 'shared'), staticOptions));
+app.use(express.static(frontendRoot, { ...staticOptions, index: 'index.html' }));
 
 // ── Public Routes (no auth required) ──
 app.get('/api/health', (req, res) => {
@@ -96,7 +143,8 @@ app.use((err, req, res, next) => {
 });
 
 // ── Start Server ──
-if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+// Vercel imports the Express app from api/index.js. Render/local runs this file directly.
+if (!process.env.VERCEL) {
     app.listen(PORT, () => {
         console.log(`\n🏥 Absensi API Server running on port ${PORT}`);
         console.log(`   PWA:    http://localhost:${PORT}/pegawai/login.html`);

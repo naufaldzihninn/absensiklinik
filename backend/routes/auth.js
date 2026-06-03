@@ -7,9 +7,14 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const supabase = require('../config/supabase');
+const { cleanUsername, cleanString } = require('../utils/validation');
 
 const JWT_SECRET = process.env.JWT_SECRET;
-const JWT_EXPIRES_IN = '7d'; // Token valid for 7 days
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '8h';
+
+if (!JWT_SECRET) {
+    throw new Error('JWT_SECRET harus diisi di environment.');
+}
 
 /**
  * POST /api/auth/login
@@ -18,17 +23,18 @@ const JWT_EXPIRES_IN = '7d'; // Token valid for 7 days
  */
 router.post('/login', async (req, res) => {
     try {
-        const { username, password } = req.body;
+        const username = cleanUsername(req.body.username);
+        const password = cleanString(req.body.password, 128);
 
         if (!username || !password) {
-            return res.status(400).json({ error: 'Username dan password harus diisi.' });
+            return res.status(400).json({ error: 'Username dan password harus valid.' });
         }
 
         // Find user by username
         const { data: user, error } = await supabase
             .from('pegawai')
             .select('id_pegawai, username, password, nama_lengkap, role, status_wajah, vektor_wajah, is_active')
-            .eq('username', username.trim().toLowerCase())
+            .eq('username', username)
             .single();
 
         if (error || !user) {

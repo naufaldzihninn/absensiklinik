@@ -97,7 +97,7 @@ Membangun ekosistem absensi **tanpa instalasi** berbasis Progressive Web App (PW
 |---|---|---|
 | B1 | **Smart Auto-Shift Detection** | API mengkategorikan shift otomatis berdasarkan waktu clock-in. Logic: `04:00–11:59 = Shift Pagi (patokan 07:00)`, `12:00–20:00 = Shift Siang (patokan 14:00)`. |
 | B2 | **Auto-Late Calculation** | Menghitung selisih waktu clock-in dengan jam patokan shift untuk memberi cap "Tepat Waktu" atau "Terlambat". |
-| B3 | **Server-Enforced Face Matching** | API menghitung Euclidean Distance antara descriptor wajah live dan descriptor master. Match valid saat distance < 0.35. |
+| B3 | **Server-Enforced Face Matching** | API menghitung Euclidean Distance antara descriptor wajah live dan descriptor master. Match valid saat distance < 0.5. |
 | B4 | **Descriptor-Only Daily Attendance** | Foto selfie harian tidak diarsipkan; absensi mengirim descriptor live, dan database menyimpan descriptor master serta log ringkas. |
 | B5 | **Anti-Duplicate Attendance** | API menolak clock-in/clock-out ganda dalam periode shift yang sama melalui process lock dan unique index harian berbasis WIB. |
 | B6 | **Rate Limiting** | Proteksi endpoint API dari penyalahgunaan (brute force login, spam request) menggunakan express-rate-limit. |

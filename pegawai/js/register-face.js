@@ -80,6 +80,12 @@
 
     async function capturePhoto() {
         try {
+            const confirmBtn = document.getElementById('confirmBtn');
+            setButtonState(confirmBtn, '🔍 Mendeteksi wajah...', true);
+
+            const video = document.getElementById('cameraFeed');
+            const result = await FaceAI.detectFromVideo(video);
+
             capturedPhoto = Camera.capture();
             Camera.stop();
 
@@ -89,10 +95,6 @@
             setDisplay('cameraView', 'none');
             setDisplay('stepConfirm', 'flex');
 
-            const confirmBtn = document.getElementById('confirmBtn');
-            setButtonState(confirmBtn, '🔍 Mendeteksi wajah...', true);
-
-            const result = await FaceAI.detectFromImage(capturedPhoto);
             if (result) {
                 extractedDescriptor = result.descriptor;
                 setButtonState(confirmBtn, `✓ Wajah Terdeteksi (${(result.score * 100).toFixed(0)}%)`, false);

@@ -130,7 +130,7 @@ const FaceAI = (() => {
      * Convert Euclidean distance to similarity score (0-1).
      * @returns {{ match: boolean, score: number, distance: number }}
      */
-    function compareDescriptors(desc1, desc2, threshold = 0.6) {
+    function compareDescriptors(desc1, desc2, threshold = 0.5) {
         const distance = euclideanDistance(desc1, desc2);
         const score = Math.max(0, 1 - distance);
         return {

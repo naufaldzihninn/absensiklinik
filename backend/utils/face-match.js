@@ -1,5 +1,5 @@
 const FACE_DESCRIPTOR_LENGTH = 128;
-const FACE_MATCH_THRESHOLD = 0.35;
+const FACE_MATCH_THRESHOLD = 0.5;
 
 function normalizeDescriptor(descriptor) {
     if (!Array.isArray(descriptor) || descriptor.length !== FACE_DESCRIPTOR_LENGTH) {

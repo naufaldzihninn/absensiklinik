@@ -52,12 +52,78 @@ const FaceAI = (() => {
         return modelsLoaded;
     }
 
+    function getInputSize(input) {
+        return {
+            width: input.videoWidth || input.naturalWidth || input.width || 0,
+            height: input.videoHeight || input.naturalHeight || input.height || 0
+        };
+    }
+
+    function center(points) {
+        if (!points || points.length === 0) return null;
+        const total = points.reduce((acc, point) => {
+            acc.x += point.x;
+            acc.y += point.y;
+            return acc;
+        }, { x: 0, y: 0 });
+        return {
+            x: total.x / points.length,
+            y: total.y / points.length
+        };
+    }
+
+    function calculatePoseScore(landmarks) {
+        if (!landmarks) return null;
+        const leftEye = center(landmarks.getLeftEye());
+        const rightEye = center(landmarks.getRightEye());
+        const nose = center(landmarks.getNose());
+        const mouth = center(landmarks.getMouth());
+
+        if (!leftEye || !rightEye || !nose || !mouth) return null;
+
+        const eyeDistance = Math.max(1, Math.abs(rightEye.x - leftEye.x));
+        return Math.abs(rightEye.y - leftEye.y) / eyeDistance;
+    }
+
+    function buildQuality(result, faceCount, input) {
+        const inputSize = getInputSize(input);
+        const box = result?.detection?.box || {};
+        const detectionScore = Number(result?.detection?.score || 0);
+        const poseScore = calculatePoseScore(result?.landmarks);
+
+        let reason = null;
+        if (faceCount < 1) reason = 'REJECTED_NO_FACE';
+        if (faceCount > 1) reason = 'REJECTED_MULTIPLE_FACES';
+        if (!reason && detectionScore < 0.75) reason = 'REJECTED_LOW_QUALITY';
+        if (!reason && ((box.width || 0) < 120 || (box.height || 0) < 120)) reason = 'REJECTED_LOW_QUALITY';
+        if (!reason && Number.isFinite(poseScore) && poseScore > 0.22) reason = 'REJECTED_POSE';
+
+        const sizeScore = Math.min(1, Math.min((box.width || 0) / 220, (box.height || 0) / 220));
+        const poseQuality = Number.isFinite(poseScore) ? Math.max(0, 1 - poseScore / 0.22) : 0.8;
+        const qualityScore = Math.max(0, Math.min(1, (detectionScore * 0.6) + (sizeScore * 0.25) + (poseQuality * 0.15)));
+
+        return {
+            passed: reason === null,
+            reason,
+            faceCount,
+            detectionScore: parseFloat(detectionScore.toFixed(4)),
+            faceBox: {
+                width: Math.round(box.width || 0),
+                height: Math.round(box.height || 0)
+            },
+            inputSize,
+            blurScore: null,
+            poseScore: Number.isFinite(poseScore) ? parseFloat(poseScore.toFixed(4)) : null,
+            qualityScore: parseFloat(qualityScore.toFixed(4))
+        };
+    }
+
     /**
-     * Detect a single face and extract 128-dim descriptor.
+     * Analyze all visible faces and extract one descriptor when quality passes.
      * @param {HTMLVideoElement|HTMLCanvasElement|HTMLImageElement} input
-     * @returns {Promise<{descriptor: number[], score: number, box: object}|null>}
+     * @returns {Promise<{descriptor: number[]|null, score: number, box: object, quality: object}>}
      */
-    async function detectAndExtract(input) {
+    async function analyze(input) {
         if (!modelsLoaded) {
             throw new Error('Model AI belum dimuat. Panggil FaceAI.load() dulu.');
         }
@@ -67,18 +133,42 @@ const FaceAI = (() => {
             scoreThreshold: 0.5
         });
 
-        const result = await faceapi
-            .detectSingleFace(input, options)
+        const results = await faceapi
+            .detectAllFaces(input, options)
             .withFaceLandmarks(true) // true = use tiny landmark model
-            .withFaceDescriptor();
+            .withFaceDescriptors();
 
-        if (!result) return null;
+        const faceCount = results.length;
+        const result = faceCount === 1 ? results[0] : null;
+        const quality = buildQuality(result, faceCount, input);
+
+        if (!result || !quality.passed) {
+            return {
+                descriptor: null,
+                score: quality.detectionScore || 0,
+                box: quality.faceBox,
+                quality
+            };
+        }
 
         return {
-            descriptor: Array.from(result.descriptor), // Float32Array → number[]
+            descriptor: Array.from(result.descriptor),
             score: result.detection.score,
-            box: result.detection.box
+            box: result.detection.box,
+            quality
         };
+    }
+
+    /**
+     * Detect a single face and extract 128-dim descriptor.
+     * @param {HTMLVideoElement|HTMLCanvasElement|HTMLImageElement} input
+     * @returns {Promise<{descriptor: number[], score: number, box: object, quality: object}|null>}
+     */
+    async function detectAndExtract(input) {
+        const result = await analyze(input);
+        if (!result.descriptor) return null;
+
+        return result;
     }
 
     /**
@@ -143,6 +233,7 @@ const FaceAI = (() => {
     return {
         load,
         isReady,
+        analyze,
         detectAndExtract,
         detectFromImage,
         detectFromVideo,

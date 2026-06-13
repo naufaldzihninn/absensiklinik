@@ -42,6 +42,16 @@
         });
     }
 
+    function qualityMessage(reason) {
+        const messages = {
+            REJECTED_NO_FACE: 'Wajah tidak terdeteksi. Pastikan wajah terlihat jelas.',
+            REJECTED_MULTIPLE_FACES: 'Terdeteksi lebih dari satu wajah. Pastikan hanya Anda di kamera.',
+            REJECTED_LOW_QUALITY: 'Foto kurang jelas. Coba dengan pencahayaan lebih baik.',
+            REJECTED_POSE: 'Wajah terlalu miring. Hadapkan wajah ke kamera.'
+        };
+        return messages[reason] || 'Wajah belum siap. Silakan coba lagi.';
+    }
+
     async function initCamera() {
         try {
             isProcessing = false;
@@ -72,17 +82,22 @@
             }
 
             const video = document.getElementById('cameraFeed');
-            setText('processingText', 'Mendeteksi wajah...');
-            const faceResult = await FaceAI.detectFromVideo(video);
-
-            Camera.stop();
-            setDisplay('cameraScreen', 'none');
             setDisplay('processingScreen', 'flex');
 
-            if (!faceResult) {
-                showFailResult('Wajah tidak terdeteksi. Pastikan wajah terlihat jelas dan pencahayaan cukup.');
+            setText('processingText', 'Memverifikasi wajah...');
+            const faceResult = await FaceAI.analyze(video);
+            Camera.stop();
+            setDisplay('cameraScreen', 'none');
+
+            if (!faceResult.descriptor) {
+                showFailResult(qualityMessage(faceResult.quality?.reason));
                 return;
             }
+
+            const faceSample = {
+                descriptor: faceResult.descriptor,
+                quality: faceResult.quality
+            };
 
             setText('processingText', 'Mengambil lokasi GPS...');
             let gps;
@@ -95,8 +110,8 @@
 
             setText('processingText', 'Menyimpan data absensi...');
             const result = isMasuk
-                ? await API.clockIn(gps.latitude, gps.longitude, faceResult.descriptor)
-                : await API.clockOut(gps.latitude, gps.longitude, faceResult.descriptor);
+                ? await API.clockIn(gps.latitude, gps.longitude, faceSample)
+                : await API.clockOut(gps.latitude, gps.longitude, faceSample);
 
             const akurasi = result.face?.score || result.data?.akurasi_wajah || 0;
             showSuccessResult(result, akurasi);
@@ -129,7 +144,7 @@
             }
         }
 
-        setText('resultAkurasi', `${((akurasi || record.akurasi_wajah || 0) * 100).toFixed(1)}%`);
+        setText('resultAkurasi', (akurasi || record.akurasi_wajah) ? 'Terverifikasi' : '-');
         setDisplay('processingScreen', 'none');
         setDisplay('successScreen', 'flex');
     }

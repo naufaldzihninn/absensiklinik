@@ -2,6 +2,9 @@
     "name": "absensi-klinik-prima-insani",
     "version": "1.0.0",
     "description": "Sistem Absensi Cerdas Klinik Prima Insani",
+    "scripts": {
+        "calibrate-face-threshold": "node backend/scripts/calibrate-face-threshold.js"
+    },
     "dependencies": {
         "@supabase/supabase-js": "^2.45.0",
         "bcryptjs": "^2.4.3",

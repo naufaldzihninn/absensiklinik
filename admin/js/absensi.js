@@ -75,6 +75,14 @@
                 statusBadge = '<span class="admin-badge admin-badge-default">-</span>';
             }
 
+            const faceQuality = record.face_quality || {};
+            const faceDebug = [
+                record.face_decision || 'LEGACY',
+                `match ${faceQuality.matchedFrames ?? '-'}/${faceQuality.validFrames ?? '-'}`,
+                record.face_match_distance != null ? `d ${Number(record.face_match_distance).toFixed(4)}` : null,
+                record.face_threshold_used != null ? `t ${Number(record.face_threshold_used).toFixed(2)}` : null
+            ].filter(Boolean).join('<br>');
+
             return `
           <tr>
             <td style="font-weight: 600;">${AdminApp.escapeHtml(record.nama_pegawai || '-')}</td>
@@ -84,6 +92,7 @@
             <td style="font-weight: 600;">${AdminApp.escapeHtml(AdminApp.formatTime(record.waktu_absen))}</td>
             <td>${statusBadge}</td>
             <td style="font-weight: 600; color: #22C55E;">${((record.akurasi_wajah || 0) * 100).toFixed(1)}%</td>
+            <td style="font-size: 0.78rem; color: #475569;">${faceDebug}</td>
             <td>${Number(record.jarak_meter || 0)}m</td>
             <td>
               <button class="admin-btn admin-btn-outline admin-btn-sm show-map-btn" data-record-index="${start + index}">
@@ -129,14 +138,21 @@
 
     function showMap(record) {
         const coords = record.koordinat_absen || '';
-        const distance = Number(record.jarak_meter || 0);
+        const geoDistance = Number(record.jarak_meter || 0);
         const accuracy = Number(record.akurasi_wajah || 0);
         const name = record.nama_pegawai || '-';
+        const faceQuality = record.face_quality || {};
+        const matchedFrames = faceQuality.matchedFrames ?? '-';
+        const validFrames = faceQuality.validFrames ?? '-';
+        const faceDistance = record.face_match_distance != null ? Number(record.face_match_distance).toFixed(4) : '-';
+        const threshold = record.face_threshold_used != null ? Number(record.face_threshold_used).toFixed(2) : '-';
 
         document.getElementById('mapModalTitle').textContent = `Lokasi Absensi - ${name}`;
         document.getElementById('mapCoords').textContent = coords || '-';
-        document.getElementById('mapDistance').textContent = `${distance} meter`;
+        document.getElementById('mapDistance').textContent = `${geoDistance} meter`;
         document.getElementById('mapAccuracy').textContent = `${(accuracy * 100).toFixed(1)}%`;
+        document.getElementById('mapFaceDecision').textContent = record.face_decision || 'LEGACY';
+        document.getElementById('mapFaceMatching').textContent = `${matchedFrames}/${validFrames} frame, distance ${faceDistance}, threshold ${threshold}`;
         document.getElementById('mapTime').textContent = AdminApp.formatDateTime(record.waktu_absen);
         AdminApp.openModal('mapModal');
 
@@ -158,7 +174,7 @@
             }).addTo(leafletMap);
 
             L.marker([employeeCoords.lat, employeeCoords.lng]).addTo(leafletMap)
-                .bindPopup(`<b>${AdminApp.escapeHtml(name)}</b><br>Jarak: ${distance}m`).openPopup();
+                .bindPopup(`<b>${AdminApp.escapeHtml(name)}</b><br>Jarak: ${geoDistance}m`).openPopup();
 
             const clinicIcon = L.divIcon({
                 html: '<div style="background:#DC2626;width:14px;height:14px;border-radius:50%;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.4);"></div>',
@@ -190,6 +206,16 @@
         }
 
         const rows = filteredRecords.map((record) => ({
+            ...(() => {
+                const faceQuality = record.face_quality || {};
+                return {
+                    'Face Decision': record.face_decision || 'LEGACY',
+                    'Matched Frames': faceQuality.matchedFrames ?? '',
+                    'Valid Frames': faceQuality.validFrames ?? '',
+                    'Best Distance': record.face_match_distance ?? '',
+                    'Threshold': record.face_threshold_used ?? ''
+                };
+            })(),
             Nama: record.nama_pegawai || '-',
             Tanggal: AdminApp.formatDate(record.waktu_absen),
             Shift: record.nama_shift || '-',

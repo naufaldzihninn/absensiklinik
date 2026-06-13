@@ -6,7 +6,11 @@ const express = require('express');
 const router = express.Router();
 const supabase = require('../config/supabase');
 const { verifyToken, requireRole } = require('../middleware/auth');
-const { normalizeDescriptor, compareDescriptors } = require('../utils/face-match');
+const {
+    FACE_MATCH_THRESHOLD,
+    normalizeStoredEmbeddings,
+    evaluateAttendanceFrames
+} = require('../utils/face-match');
 const { cleanLimit, cleanUuid } = require('../utils/validation');
 
 // All routes require authentication
@@ -159,44 +163,97 @@ function isDuplicateAttendanceError(error) {
     return text.includes('idx_log_absensi_unique_daily_shift');
 }
 
-async function verifyAttendanceFace(userId, descriptor) {
-    const normalizedDescriptor = normalizeDescriptor(descriptor);
-    if (!normalizedDescriptor) {
+function buildFaceFailureMessage(decision) {
+    const messages = {
+        REJECTED_NO_FACE: 'Wajah tidak terdeteksi. Pastikan wajah terlihat jelas lalu coba lagi.',
+        REJECTED_MULTIPLE_FACES: 'Terdeteksi lebih dari satu wajah. Pastikan hanya Anda yang terlihat di kamera.',
+        REJECTED_LOW_QUALITY: 'Foto kurang jelas. Pastikan pencahayaan cukup dan wajah berada di tengah kamera.',
+        REJECTED_BLUR: 'Foto terlihat buram. Pegang kamera lebih stabil lalu coba lagi.',
+        REJECTED_POSE: 'Wajah terlalu miring. Hadapkan wajah ke kamera lalu coba lagi.',
+        REJECTED_DARK: 'Pencahayaan terlalu gelap. Pindah ke tempat yang lebih terang lalu coba lagi.',
+        REJECTED_LOW_SIMILARITY: 'Verifikasi wajah gagal. Pastikan akun dan wajah yang digunakan sesuai.'
+    };
+
+    return messages[decision] || 'Verifikasi wajah gagal. Pastikan wajah terlihat jelas dan coba lagi.';
+}
+
+async function logFaceRejection(userId, tipeAbsen, face) {
+    try {
+        await supabase.from('audit_log').insert({
+            id_admin: null,
+            aksi: 'FACE_ATTENDANCE_REJECTED',
+            detail: {
+                id_pegawai: userId,
+                tipe_absen: tipeAbsen,
+                face_decision: face?.decision,
+                valid_frames: face?.validFrames,
+                matched_frames: face?.matchedFrames,
+                best_distance: face?.bestDistance,
+                threshold_used: face?.thresholdUsed,
+                frame_results: face?.frameResults
+            }
+        });
+    } catch (err) {
+        console.warn('Face rejection audit log failed:', err.message);
+    }
+}
+
+async function verifyAttendanceFace(userId, framesOrDescriptor) {
+    const frames = Array.isArray(framesOrDescriptor)
+        ? framesOrDescriptor
+        : framesOrDescriptor
+            ? [framesOrDescriptor]
+            : [];
+
+    if (frames.length === 0) {
         return {
             ok: false,
             status: 400,
-            error: 'Data wajah live tidak valid. Silakan ulangi verifikasi wajah.'
+            error: 'Data wajah live tidak valid. Silakan ulangi verifikasi wajah.',
+            face: {
+                decision: 'REJECTED_LOW_QUALITY',
+                validFrames: 0,
+                matchedFrames: 0,
+                thresholdUsed: FACE_MATCH_THRESHOLD
+            }
         };
     }
 
     const { data: pegawai, error } = await supabase
         .from('pegawai')
-        .select('vektor_wajah, status_wajah')
+        .select('vektor_wajah, face_embeddings, status_wajah')
         .eq('id_pegawai', userId)
         .single();
 
-    if (error || !pegawai || !pegawai.status_wajah || !pegawai.vektor_wajah) {
+    const masterDescriptors = normalizeStoredEmbeddings(pegawai);
+    if (error || !pegawai || !pegawai.status_wajah || masterDescriptors.length === 0) {
         return {
             ok: false,
             status: 400,
-            error: 'Anda belum mendaftarkan wajah. Silakan registrasi wajah terlebih dahulu.'
+            error: 'Anda belum mendaftarkan wajah. Silakan registrasi wajah terlebih dahulu.',
+            face: {
+                decision: 'REJECTED_LOW_SIMILARITY',
+                validFrames: 0,
+                matchedFrames: 0,
+                thresholdUsed: FACE_MATCH_THRESHOLD
+            }
         };
     }
 
-    const result = compareDescriptors(normalizedDescriptor, pegawai.vektor_wajah);
-    if (!result) {
-        return {
-            ok: false,
-            status: 400,
-            error: 'Data wajah tersimpan tidak valid. Hubungi admin untuk reset wajah.'
-        };
-    }
+    const isLegacySingleFrame = frames.length === 1;
+    const result = evaluateAttendanceFrames(frames, masterDescriptors, {
+        threshold: FACE_MATCH_THRESHOLD,
+        minValidFrames: isLegacySingleFrame ? 1 : 2,
+        minMatchedFrames: isLegacySingleFrame ? 1 : 2,
+        requireQuality: !isLegacySingleFrame
+    });
 
-    if (!result.match) {
+    if (!result.accepted) {
         return {
             ok: false,
             status: 403,
-            error: `Verifikasi wajah gagal (kecocokan: ${(result.score * 100).toFixed(1)}%).`
+            error: buildFaceFailureMessage(result.decision),
+            face: result
         };
     }
 
@@ -209,7 +266,7 @@ async function verifyAttendanceFace(userId, descriptor) {
  */
 router.post('/clock-in', async (req, res) => {
     try {
-        const { latitude, longitude, descriptor } = req.body;
+        const { latitude, longitude, descriptor, frames } = req.body;
         const userId = req.user.id_pegawai;
         const nowUtc = new Date();          // Real UTC — used for DB storage
         const nowWib = nowWIB();            // WIB — used for shift/status logic only
@@ -218,9 +275,15 @@ router.post('/clock-in', async (req, res) => {
         const currentTime = `${String(nowWib.getUTCHours()).padStart(2,'0')}:${String(nowWib.getUTCMinutes()).padStart(2,'0')}:${String(nowWib.getUTCSeconds()).padStart(2,'0')}`;
 
         // 1. Verify face on the server before accepting attendance data
-        const faceCheck = await verifyAttendanceFace(userId, descriptor);
+        const faceCheck = await verifyAttendanceFace(userId, frames || descriptor);
         if (!faceCheck.ok) {
-            return res.status(faceCheck.status).json({ error: faceCheck.error });
+            await logFaceRejection(userId, 'MASUK', faceCheck.face);
+            return res.status(faceCheck.status).json({
+                success: false,
+                error: faceCheck.error,
+                code: faceCheck.face?.decision,
+                face: faceCheck.face
+            });
         }
 
         // 2. Detect shift
@@ -268,7 +331,16 @@ router.post('/clock-in', async (req, res) => {
                     koordinat_absen: `${locationCheck.latitude}, ${locationCheck.longitude}`,
                     jarak_meter: locationCheck.jarak,
                     status_kehadiran: status,
-                    akurasi_wajah: faceCheck.result.score
+                    akurasi_wajah: faceCheck.result.score,
+                    face_match_score: faceCheck.result.score,
+                    face_match_distance: faceCheck.result.bestDistance,
+                    face_threshold_used: faceCheck.result.thresholdUsed,
+                    face_quality: {
+                        validFrames: faceCheck.result.validFrames,
+                        matchedFrames: faceCheck.result.matchedFrames,
+                        frameResults: faceCheck.result.frameResults
+                    },
+                    face_decision: faceCheck.result.decision
                 })
                 .select('*')
                 .single();
@@ -281,6 +353,7 @@ router.post('/clock-in', async (req, res) => {
             }
 
             return res.status(201).json({
+                success: true,
                 data: record,
                 message: `Clock-in berhasil! Shift ${shift.nama_shift} — ${status}`,
                 shift: shift.nama_shift,
@@ -301,15 +374,21 @@ router.post('/clock-in', async (req, res) => {
  */
 router.post('/clock-out', async (req, res) => {
     try {
-        const { latitude, longitude, descriptor } = req.body;
+        const { latitude, longitude, descriptor, frames } = req.body;
         const userId = req.user.id_pegawai;
         const nowUtc = new Date();          // Real UTC — for DB storage
         const nowWib = nowWIB();            // WIB — for date boundary logic
 
         // 1. Verify face on the server before accepting attendance data
-        const faceCheck = await verifyAttendanceFace(userId, descriptor);
+        const faceCheck = await verifyAttendanceFace(userId, frames || descriptor);
         if (!faceCheck.ok) {
-            return res.status(faceCheck.status).json({ error: faceCheck.error });
+            await logFaceRejection(userId, 'PULANG', faceCheck.face);
+            return res.status(faceCheck.status).json({
+                success: false,
+                error: faceCheck.error,
+                code: faceCheck.face?.decision,
+                face: faceCheck.face
+            });
         }
 
         // 2. Find today's clock-in to determine shift (WIB date boundaries → real UTC)
@@ -364,7 +443,16 @@ router.post('/clock-out', async (req, res) => {
                     koordinat_absen: `${locationCheck.latitude}, ${locationCheck.longitude}`,
                     jarak_meter: locationCheck.jarak,
                     status_kehadiran: '-',
-                    akurasi_wajah: faceCheck.result.score
+                    akurasi_wajah: faceCheck.result.score,
+                    face_match_score: faceCheck.result.score,
+                    face_match_distance: faceCheck.result.bestDistance,
+                    face_threshold_used: faceCheck.result.thresholdUsed,
+                    face_quality: {
+                        validFrames: faceCheck.result.validFrames,
+                        matchedFrames: faceCheck.result.matchedFrames,
+                        frameResults: faceCheck.result.frameResults
+                    },
+                    face_decision: faceCheck.result.decision
                 })
                 .select('*')
                 .single();
@@ -377,6 +465,7 @@ router.post('/clock-out', async (req, res) => {
             }
 
             return res.status(201).json({
+                success: true,
                 data: record,
                 message: 'Clock-out berhasil!',
                 face: faceCheck.result
@@ -414,7 +503,8 @@ router.get('/history', async (req, res) => {
             .from('log_absensi')
             .select(`
         id_absen, tipe_absen, waktu_absen, koordinat_absen, jarak_meter,
-        status_kehadiran, akurasi_wajah,
+        status_kehadiran, akurasi_wajah, face_match_score, face_match_distance,
+        face_threshold_used, face_quality, face_decision,
         master_shift ( nama_shift ),
         pegawai ( nama_lengkap )
       `)
@@ -460,6 +550,8 @@ router.get('/today', requireRole('admin'), async (req, res) => {
             .select(`
         id_absen, id_pegawai, tipe_absen, waktu_absen,
         status_kehadiran, akurasi_wajah, jarak_meter, koordinat_absen,
+        face_match_score, face_match_distance, face_threshold_used,
+        face_quality, face_decision,
         master_shift ( nama_shift ),
         pegawai ( nama_lengkap )
       `)

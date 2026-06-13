@@ -27,13 +27,16 @@
                 <div class="register-step-number">1</div>
                 <h2 style="margin-top: 8px;">Registrasi Wajah</h2>
                 <p class="text-secondary text-sm" style="margin-top: 8px; max-width: 300px;">
-                    Foto wajah Anda akan digunakan sebagai data biometrik untuk verifikasi absensi harian.
+                    Ambil 5 foto wajah untuk meningkatkan akurasi absensi harian.
                 </p>
             </div>
 
             <div class="glass-card" style="text-align: center; width: 100%; max-width: 360px;">
                 <div style="font-size: 4rem; margin-bottom: 16px;">📸</div>
                 <h3>Panduan Foto</h3>
+                <div id="sampleCounter" class="text-sm" style="margin-top: 8px; font-weight: 700;">0/5 foto valid</div>
+                <div id="sampleGuide" class="text-sm text-secondary" style="margin-top: 4px;">Hadap lurus ke kamera</div>
+                <div id="samplePreviewList" class="face-sample-list"></div>
                 <ul style="text-align: left; margin: 16px 0; list-style: none;">
                     <li style="padding: 8px 0; display: flex; align-items: center; gap: 10px;">
                         <span style="color: var(--success);">✓</span>
@@ -69,7 +72,7 @@
 
             <div class="camera-header">
                 <button class="camera-close-btn" id="closeCameraBtn">✕</button>
-                <span style="color: white; font-size: 0.85rem; font-weight: 500;">Registrasi Wajah</span>
+                <span style="color: white; font-size: 0.85rem; font-weight: 500;" id="cameraSampleLabel">Foto 1/5</span>
                 <div style="width: 40px;"></div>
             </div>
 
@@ -82,8 +85,8 @@
         <div class="register-face-page" id="stepConfirm" style="display: none;">
             <div class="register-step">
                 <div class="register-step-number">2</div>
-                <h2 style="margin-top: 8px;">Konfirmasi Foto</h2>
-                <p class="text-secondary text-sm" style="margin-top: 8px;">
+                <h2 style="margin-top: 8px;" id="confirmTitle">Konfirmasi Foto</h2>
+                <p class="text-secondary text-sm" style="margin-top: 8px;" id="confirmHelp">
                     Pastikan wajah Anda jelas dan tidak buram
                 </p>
             </div>

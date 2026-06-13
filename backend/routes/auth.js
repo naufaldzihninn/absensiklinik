@@ -8,6 +8,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const supabase = require('../config/supabase');
 const { cleanUsername, cleanString } = require('../utils/validation');
+const { normalizeStoredEmbeddings } = require('../utils/face-match');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '8h';
@@ -33,7 +34,7 @@ router.post('/login', async (req, res) => {
         // Find user by username
         const { data: user, error } = await supabase
             .from('pegawai')
-            .select('id_pegawai, username, password, nama_lengkap, role, status_wajah, vektor_wajah, is_active')
+            .select('id_pegawai, username, password, nama_lengkap, role, status_wajah, vektor_wajah, face_embeddings, is_active')
             .eq('username', username)
             .single();
 
@@ -71,7 +72,7 @@ router.post('/login', async (req, res) => {
                 nama_lengkap: user.nama_lengkap,
                 role: user.role,
                 status_wajah: user.status_wajah,
-                has_vektor: user.vektor_wajah !== null
+                has_vektor: normalizeStoredEmbeddings(user).length > 0
             }
         });
 

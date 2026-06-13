@@ -45,6 +45,10 @@ CREATE TABLE IF NOT EXISTS pegawai (
   role            VARCHAR(20) NOT NULL DEFAULT 'pegawai' CHECK (role IN ('pegawai', 'admin')),
   foto_master_url VARCHAR(500),
   vektor_wajah    JSONB,
+  face_embeddings JSONB DEFAULT '[]'::jsonb,
+  face_enrollment_version INT DEFAULT 1,
+  face_registered_at TIMESTAMPTZ NULL,
+  face_quality_summary JSONB DEFAULT '{}'::jsonb,
   status_wajah    BOOLEAN DEFAULT FALSE,
   is_active       BOOLEAN DEFAULT TRUE,
   created_at      TIMESTAMPTZ DEFAULT NOW(),
@@ -78,8 +82,27 @@ CREATE TABLE IF NOT EXISTS log_absensi (
   jarak_meter       DECIMAL(10,2),
   status_kehadiran  VARCHAR(20) DEFAULT 'Tepat Waktu',
   akurasi_wajah     DECIMAL(5,4),
+  face_match_score   DECIMAL(6,4),
+  face_match_distance DECIMAL(8,4),
+  face_threshold_used DECIMAL(6,4),
+  face_quality       JSONB DEFAULT '{}'::jsonb,
+  face_decision      VARCHAR(40),
   created_at        TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Idempotent upgrades for existing deployments.
+ALTER TABLE pegawai
+  ADD COLUMN IF NOT EXISTS face_embeddings JSONB DEFAULT '[]'::jsonb,
+  ADD COLUMN IF NOT EXISTS face_enrollment_version INT DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS face_registered_at TIMESTAMPTZ NULL,
+  ADD COLUMN IF NOT EXISTS face_quality_summary JSONB DEFAULT '{}'::jsonb;
+
+ALTER TABLE log_absensi
+  ADD COLUMN IF NOT EXISTS face_match_score DECIMAL(6,4),
+  ADD COLUMN IF NOT EXISTS face_match_distance DECIMAL(8,4),
+  ADD COLUMN IF NOT EXISTS face_threshold_used DECIMAL(6,4),
+  ADD COLUMN IF NOT EXISTS face_quality JSONB DEFAULT '{}'::jsonb,
+  ADD COLUMN IF NOT EXISTS face_decision VARCHAR(40);
 
 -- Index for fast queries
 CREATE INDEX IF NOT EXISTS idx_log_absensi_pegawai ON log_absensi(id_pegawai);

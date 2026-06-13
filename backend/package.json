@@ -6,7 +6,8 @@
     "scripts": {
         "start": "node server.js",
         "dev": "node --watch server.js",
-        "create-admin": "node scripts/create-admin.js"
+        "create-admin": "node scripts/create-admin.js",
+        "calibrate-face-threshold": "node scripts/calibrate-face-threshold.js"
     },
     "dependencies": {
         "@supabase/supabase-js": "^2.45.0",

@@ -126,10 +126,10 @@ const API = (() => {
     }
 
     // ── Face ──
-    function registerFace(descriptor) {
+    function registerFace(samples) {
         return request('/face/register', {
             method: 'POST',
-            body: { descriptor }
+            body: { samples }
         });
     }
 

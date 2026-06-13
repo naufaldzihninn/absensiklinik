@@ -8,6 +8,7 @@
     const absenType = params.get('type') === 'pulang' ? 'pulang' : 'masuk';
     const isMasuk = absenType === 'masuk';
     let isProcessing = false;
+    let faceConfig = { provider: 'faceapi', requireClientDescriptor: true };
 
     function setDisplay(id, display) {
         const element = document.getElementById(id);
@@ -60,9 +61,13 @@
             const video = document.getElementById('cameraFeed');
             await Camera.start(video);
 
-            waitForFaceApi()
-                .then(() => FaceAI.load((message) => console.log('[FaceAI]', message)))
-                .catch((err) => console.warn('Model load:', err.message));
+            API.getFaceConfig()
+                .then((config) => {
+                    faceConfig = config;
+                    if (!faceConfig.requireClientDescriptor) return null;
+                    return waitForFaceApi().then(() => FaceAI.load((message) => console.log('[FaceAI]', message)));
+                })
+                .catch((err) => console.warn('Face config/model load:', err.message));
         } catch (err) {
             App.showToast(err.message, 'error');
             setTimeout(goToDashboard, 2000);
@@ -75,7 +80,13 @@
         setCaptureDisabled(true);
 
         try {
-            if (!FaceAI.isReady()) {
+            try {
+                faceConfig = await API.getFaceConfig();
+            } catch (err) {
+                console.warn('Face config:', err.message);
+            }
+
+            if (faceConfig.requireClientDescriptor && !FaceAI.isReady()) {
                 App.showToast('Memuat model AI, tunggu sebentar...', 'info');
                 await waitForFaceApi();
                 await FaceAI.load();
@@ -85,18 +96,24 @@
             setDisplay('processingScreen', 'flex');
 
             setText('processingText', 'Memverifikasi wajah...');
-            const faceResult = await FaceAI.analyze(video);
+            const faceResult = faceConfig.requireClientDescriptor
+                ? await FaceAI.analyze(video)
+                : { descriptor: null, quality: null };
+            const capturedPhoto = faceConfig.requireClientDescriptor && !faceResult.descriptor
+                ? null
+                : Camera.capture();
             Camera.stop();
             setDisplay('cameraScreen', 'none');
 
-            if (!faceResult.descriptor) {
+            if (faceConfig.requireClientDescriptor && !faceResult.descriptor) {
                 showFailResult(qualityMessage(faceResult.quality?.reason));
                 return;
             }
 
             const faceSample = {
                 descriptor: faceResult.descriptor,
-                quality: faceResult.quality
+                quality: faceResult.quality,
+                image: capturedPhoto
             };
 
             setText('processingText', 'Mengambil lokasi GPS...');

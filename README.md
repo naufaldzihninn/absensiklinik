@@ -52,7 +52,7 @@ Sistem ini dirancang sangat ringan, tidak membutuhkan bundler kompleks untuk fro
 
 - **Frontend:** HTML5, CSS3, Vanilla JS, Tailwind CSS (Dashboard)
 - **Backend:** Node.js, Express.js
-- **AI Engine:** face-api.js (TensorFlow.js Core)
+- **AI Engine:** face-api.js (default) atau OpenCV YuNet/SFace via Hugging Face Space
 - **Database:** Supabase (PostgreSQL)
 - **Security:** JWT Authentication, Bcrypt
 
@@ -112,10 +112,28 @@ absensi-klinik/
 │   ├── config/            # Konfigurasi Cloud
 │   ├── routes/            # API Endpoints
 │   └── ...
+├── face-service/          # 🧠 FastAPI Docker Space untuk YuNet/SFace
 ├── shared/                # 🎨 Asset yang dipakai bersama
 ├── prd.md                 # 📄 Detail dokumen arsitektur (Super Lengkap!)
 └── vercel.json            # Deployment config jika memakai Vercel
 ```
+
+### Face Provider: Hugging Face YuNet/SFace
+Flow default tetap `FACE_PROVIDER=faceapi`. Untuk migrasi OpenCV SFace:
+
+1. Deploy folder `face-service/` sebagai Hugging Face Docker Space.
+2. Set Hugging Face secret `FACE_SERVICE_API_KEY`.
+3. Set env backend/Vercel:
+   ```text
+   FACE_PROVIDER=opencv_sface
+   FACE_SERVICE_URL=https://<username>-klinik-face-service.hf.space
+   FACE_SERVICE_API_KEY=<same-as-hugging-face-secret>
+   FACE_SERVICE_TIMEOUT_MS=10000
+   FACE_THRESHOLD_DEFAULT=0.50
+   JSON_BODY_LIMIT=7mb
+   ```
+4. Jalankan ulang migration Supabase agar kolom `face_model_provider` dan `face_provider` tersedia.
+5. Minta pegawai registrasi ulang wajah agar `face_embeddings` berisi embedding SFace.
 
 ---
 

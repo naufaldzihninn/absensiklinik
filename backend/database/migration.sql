@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS pegawai (
   vektor_wajah    JSONB,
   face_embeddings JSONB DEFAULT '[]'::jsonb,
   face_enrollment_version INT DEFAULT 1,
+  face_model_provider VARCHAR(50) DEFAULT 'faceapi',
   face_registered_at TIMESTAMPTZ NULL,
   face_quality_summary JSONB DEFAULT '{}'::jsonb,
   status_wajah    BOOLEAN DEFAULT FALSE,
@@ -82,6 +83,7 @@ CREATE TABLE IF NOT EXISTS log_absensi (
   jarak_meter       DECIMAL(10,2),
   status_kehadiran  VARCHAR(20) DEFAULT 'Tepat Waktu',
   akurasi_wajah     DECIMAL(5,4),
+  face_provider      VARCHAR(50) DEFAULT 'faceapi',
   face_match_score   DECIMAL(6,4),
   face_match_distance DECIMAL(8,4),
   face_threshold_used DECIMAL(6,4),
@@ -94,10 +96,12 @@ CREATE TABLE IF NOT EXISTS log_absensi (
 ALTER TABLE pegawai
   ADD COLUMN IF NOT EXISTS face_embeddings JSONB DEFAULT '[]'::jsonb,
   ADD COLUMN IF NOT EXISTS face_enrollment_version INT DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS face_model_provider VARCHAR(50) DEFAULT 'faceapi',
   ADD COLUMN IF NOT EXISTS face_registered_at TIMESTAMPTZ NULL,
   ADD COLUMN IF NOT EXISTS face_quality_summary JSONB DEFAULT '{}'::jsonb;
 
 ALTER TABLE log_absensi
+  ADD COLUMN IF NOT EXISTS face_provider VARCHAR(50) DEFAULT 'faceapi',
   ADD COLUMN IF NOT EXISTS face_match_score DECIMAL(6,4),
   ADD COLUMN IF NOT EXISTS face_match_distance DECIMAL(8,4),
   ADD COLUMN IF NOT EXISTS face_threshold_used DECIMAL(6,4),

@@ -21,6 +21,7 @@
 
     let capturedPhoto = null;
     let capturedSample = null;
+    let faceConfig = { provider: 'faceapi', requireClientDescriptor: true };
     const samples = [];
     const previews = [];
 
@@ -82,6 +83,12 @@
         setButtonState(btn, 'Memuat AI Model...', true);
 
         try {
+            faceConfig = await API.getFaceConfig();
+            if (!faceConfig.requireClientDescriptor) {
+                setButtonState(btn, 'Buka Kamera', false);
+                return;
+            }
+
             await waitForFaceApi();
             await FaceAI.load((message) => {
                 setButtonState(btn, message, true);
@@ -95,7 +102,7 @@
 
     async function openCamera() {
         try {
-            if (!FaceAI.isReady()) {
+            if (faceConfig.requireClientDescriptor && !FaceAI.isReady()) {
                 App.showToast('Memuat model AI, tunggu sebentar...', 'info');
                 await FaceAI.load();
             }
@@ -133,19 +140,24 @@
             captureBtn.disabled = true;
 
             const video = document.getElementById('cameraFeed');
-            const result = await FaceAI.analyze(video);
+            let result = null;
 
-            if (!result.descriptor) {
+            if (faceConfig.requireClientDescriptor) {
+                result = await FaceAI.analyze(video);
+            }
+
+            if (faceConfig.requireClientDescriptor && !result.descriptor) {
                 App.showToast(qualityMessage(result.quality?.reason), 'error');
                 captureBtn.disabled = false;
                 return;
             }
 
-            capturedSample = {
-                descriptor: result.descriptor,
-                quality: result.quality
-            };
             capturedPhoto = Camera.capture();
+            capturedSample = {
+                descriptor: result?.descriptor || null,
+                quality: result?.quality || null,
+                image: capturedPhoto
+            };
             Camera.stop();
 
             const facePreview = document.getElementById('facePreview');

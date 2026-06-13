@@ -57,7 +57,7 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '1mb' }));
+app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '7mb' }));
 app.use(express.urlencoded({ extended: true, limit: '100kb' }));
 
 // Rate limiting

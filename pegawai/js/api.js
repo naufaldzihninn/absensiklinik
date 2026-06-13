@@ -126,6 +126,10 @@ const API = (() => {
     }
 
     // ── Face ──
+    function getFaceConfig() {
+        return request('/face/config');
+    }
+
     function registerFace(samples) {
         return request('/face/register', {
             method: 'POST',
@@ -165,7 +169,7 @@ const API = (() => {
     return {
         login, logout, getSession, updateSession, isAuthenticated, getToken,
         getProfile, clockIn, clockOut, getHistory,
-        registerFace, matchFace,
+        getFaceConfig, registerFace, matchFace,
         getSettings, getShifts, getServerTime,
         getHolidays, checkHoliday,
         request, clearToken, BASE_URL

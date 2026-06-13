@@ -8,10 +8,20 @@ const supabase = require('../config/supabase');
 const { verifyToken, requireRole } = require('../middleware/auth');
 const {
     FACE_MATCH_THRESHOLD,
+    normalizeDescriptor,
     normalizeStoredEmbeddings,
     evaluateAttendanceFrames
 } = require('../utils/face-match');
 const { cleanLimit, cleanUuid } = require('../utils/validation');
+const { parseImageDataUrl } = require('../utils/image-data-url');
+const {
+    FACE_PROVIDER,
+    FACE_THRESHOLD_DEFAULT,
+    isOpenCvSFaceProvider,
+    verifyFaceWithService,
+    mapFaceServiceCode,
+    friendlyFaceServiceMessage
+} = require('../services/face-service-client');
 
 // All routes require authentication
 router.use(verifyToken);
@@ -171,10 +181,47 @@ function buildFaceFailureMessage(decision) {
         REJECTED_BLUR: 'Foto terlihat buram. Pegang kamera lebih stabil lalu coba lagi.',
         REJECTED_POSE: 'Wajah terlalu miring. Hadapkan wajah ke kamera lalu coba lagi.',
         REJECTED_DARK: 'Pencahayaan terlalu gelap. Pindah ke tempat yang lebih terang lalu coba lagi.',
-        REJECTED_LOW_SIMILARITY: 'Verifikasi wajah gagal. Pastikan akun dan wajah yang digunakan sesuai.'
+        REJECTED_LOW_SIMILARITY: 'Verifikasi wajah gagal. Pastikan akun dan wajah yang digunakan sesuai.',
+        REJECTED_LOW_CONFIDENCE: 'Foto kurang jelas. Pastikan pencahayaan cukup dan wajah berada di tengah kamera.',
+        REJECTED_FACE_TOO_SMALL: 'Wajah terlalu jauh dari kamera. Dekatkan wajah lalu coba lagi.',
+        REJECTED_INVALID_IMAGE: 'Gambar wajah tidak valid. Silakan ambil ulang foto.',
+        REJECTED_FACE_SERVICE_ERROR: 'Sistem verifikasi wajah sedang menyala ulang. Silakan coba lagi beberapa saat.'
     };
 
     return messages[decision] || 'Verifikasi wajah gagal. Pastikan wajah terlihat jelas dan coba lagi.';
+}
+
+function normalizeServiceEmbeddings(pegawai = {}) {
+    if (!Array.isArray(pegawai.face_embeddings)) return [];
+    return pegawai.face_embeddings
+        .map(normalizeDescriptor)
+        .filter(Boolean);
+}
+
+function serviceResultToFaceResult(result) {
+    const bestDistance = result.best_distance ?? null;
+    const score = Number.isFinite(Number(bestDistance))
+        ? parseFloat(Math.max(0, 1 - Number(bestDistance)).toFixed(4))
+        : 0;
+
+    return {
+        accepted: Boolean(result.matched),
+        decision: result.matched ? 'ACCEPTED' : 'REJECTED_LOW_SIMILARITY',
+        validFrames: 1,
+        matchedFrames: result.matched ? 1 : 0,
+        bestDistance: bestDistance === null ? null : parseFloat(Number(bestDistance).toFixed(4)),
+        score,
+        thresholdUsed: Number(result.threshold ?? FACE_THRESHOLD_DEFAULT),
+        provider: FACE_PROVIDER,
+        frameResults: [{
+            index: 1,
+            valid: true,
+            matched: Boolean(result.matched),
+            distance: bestDistance === null ? null : parseFloat(Number(bestDistance).toFixed(4)),
+            threshold: Number(result.threshold ?? FACE_THRESHOLD_DEFAULT),
+            quality: result.quality || {}
+        }]
+    };
 }
 
 async function logFaceRejection(userId, tipeAbsen, face) {
@@ -185,6 +232,7 @@ async function logFaceRejection(userId, tipeAbsen, face) {
             detail: {
                 id_pegawai: userId,
                 tipe_absen: tipeAbsen,
+                face_provider: face?.provider || FACE_PROVIDER,
                 face_decision: face?.decision,
                 valid_frames: face?.validFrames,
                 matched_frames: face?.matchedFrames,
@@ -199,6 +247,10 @@ async function logFaceRejection(userId, tipeAbsen, face) {
 }
 
 async function verifyAttendanceFace(userId, framesOrDescriptor) {
+    if (isOpenCvSFaceProvider()) {
+        return verifyAttendanceFaceWithService(userId, framesOrDescriptor);
+    }
+
     const frames = Array.isArray(framesOrDescriptor)
         ? framesOrDescriptor
         : framesOrDescriptor
@@ -258,6 +310,88 @@ async function verifyAttendanceFace(userId, framesOrDescriptor) {
     }
 
     return { ok: true, result };
+}
+
+async function verifyAttendanceFaceWithService(userId, imageOrFrames) {
+    const sample = Array.isArray(imageOrFrames)
+        ? imageOrFrames[0]
+        : imageOrFrames;
+    const image = parseImageDataUrl(sample?.image);
+
+    if (!image) {
+        return {
+            ok: false,
+            status: 400,
+            error: 'Gambar wajah live tidak valid. Silakan ambil ulang foto.',
+            face: {
+                accepted: false,
+                decision: 'REJECTED_INVALID_IMAGE',
+                validFrames: 0,
+                matchedFrames: 0,
+                thresholdUsed: FACE_THRESHOLD_DEFAULT,
+                provider: FACE_PROVIDER
+            }
+        };
+    }
+
+    const { data: pegawai, error } = await supabase
+        .from('pegawai')
+        .select('face_embeddings, status_wajah')
+        .eq('id_pegawai', userId)
+        .single();
+
+    const embeddings = normalizeServiceEmbeddings(pegawai);
+    if (error || !pegawai || !pegawai.status_wajah || embeddings.length === 0) {
+        return {
+            ok: false,
+            status: 400,
+            error: 'Data wajah baru belum tersedia. Silakan registrasi wajah ulang terlebih dahulu.',
+            face: {
+                accepted: false,
+                decision: 'REJECTED_LOW_SIMILARITY',
+                validFrames: 0,
+                matchedFrames: 0,
+                thresholdUsed: FACE_THRESHOLD_DEFAULT,
+                provider: FACE_PROVIDER
+            }
+        };
+    }
+
+    const result = await verifyFaceWithService({
+        image,
+        embeddings,
+        threshold: FACE_THRESHOLD_DEFAULT
+    });
+
+    if (!result.success) {
+        const decision = mapFaceServiceCode(result.code);
+        return {
+            ok: false,
+            status: result.code === 'FACE_SERVICE_TIMEOUT' || result.code === 'MODEL_NOT_READY' ? 503 : 403,
+            error: result.message || friendlyFaceServiceMessage(result.code),
+            face: {
+                accepted: false,
+                decision,
+                validFrames: 0,
+                matchedFrames: 0,
+                thresholdUsed: FACE_THRESHOLD_DEFAULT,
+                provider: FACE_PROVIDER,
+                quality: result.quality || {}
+            }
+        };
+    }
+
+    const faceResult = serviceResultToFaceResult(result);
+    if (!faceResult.accepted) {
+        return {
+            ok: false,
+            status: 403,
+            error: buildFaceFailureMessage(faceResult.decision),
+            face: faceResult
+        };
+    }
+
+    return { ok: true, result: faceResult };
 }
 
 /**
@@ -332,6 +466,7 @@ router.post('/clock-in', async (req, res) => {
                     jarak_meter: locationCheck.jarak,
                     status_kehadiran: status,
                     akurasi_wajah: faceCheck.result.score,
+                    face_provider: faceCheck.result.provider || FACE_PROVIDER,
                     face_match_score: faceCheck.result.score,
                     face_match_distance: faceCheck.result.bestDistance,
                     face_threshold_used: faceCheck.result.thresholdUsed,
@@ -444,6 +579,7 @@ router.post('/clock-out', async (req, res) => {
                     jarak_meter: locationCheck.jarak,
                     status_kehadiran: '-',
                     akurasi_wajah: faceCheck.result.score,
+                    face_provider: faceCheck.result.provider || FACE_PROVIDER,
                     face_match_score: faceCheck.result.score,
                     face_match_distance: faceCheck.result.bestDistance,
                     face_threshold_used: faceCheck.result.thresholdUsed,
@@ -503,7 +639,7 @@ router.get('/history', async (req, res) => {
             .from('log_absensi')
             .select(`
         id_absen, tipe_absen, waktu_absen, koordinat_absen, jarak_meter,
-        status_kehadiran, akurasi_wajah, face_match_score, face_match_distance,
+        status_kehadiran, akurasi_wajah, face_provider, face_match_score, face_match_distance,
         face_threshold_used, face_quality, face_decision,
         master_shift ( nama_shift ),
         pegawai ( nama_lengkap )
@@ -549,7 +685,7 @@ router.get('/today', requireRole('admin'), async (req, res) => {
             .from('log_absensi')
             .select(`
         id_absen, id_pegawai, tipe_absen, waktu_absen,
-        status_kehadiran, akurasi_wajah, jarak_meter, koordinat_absen,
+        status_kehadiran, akurasi_wajah, jarak_meter, koordinat_absen, face_provider,
         face_match_score, face_match_distance, face_threshold_used,
         face_quality, face_decision,
         master_shift ( nama_shift ),

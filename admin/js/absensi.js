@@ -77,6 +77,7 @@
 
             const faceQuality = record.face_quality || {};
             const faceDebug = [
+                record.face_provider || 'faceapi',
                 record.face_decision || 'LEGACY',
                 `match ${faceQuality.matchedFrames ?? '-'}/${faceQuality.validFrames ?? '-'}`,
                 record.face_match_distance != null ? `d ${Number(record.face_match_distance).toFixed(4)}` : null,
@@ -151,7 +152,7 @@
         document.getElementById('mapCoords').textContent = coords || '-';
         document.getElementById('mapDistance').textContent = `${geoDistance} meter`;
         document.getElementById('mapAccuracy').textContent = `${(accuracy * 100).toFixed(1)}%`;
-        document.getElementById('mapFaceDecision').textContent = record.face_decision || 'LEGACY';
+        document.getElementById('mapFaceDecision').textContent = `${record.face_provider || 'faceapi'} / ${record.face_decision || 'LEGACY'}`;
         document.getElementById('mapFaceMatching').textContent = `${matchedFrames}/${validFrames} frame, distance ${faceDistance}, threshold ${threshold}`;
         document.getElementById('mapTime').textContent = AdminApp.formatDateTime(record.waktu_absen);
         AdminApp.openModal('mapModal');
@@ -209,6 +210,7 @@
             ...(() => {
                 const faceQuality = record.face_quality || {};
                 return {
+                    'Face Provider': record.face_provider || 'faceapi',
                     'Face Decision': record.face_decision || 'LEGACY',
                     'Matched Frames': faceQuality.matchedFrames ?? '',
                     'Valid Frames': faceQuality.validFrames ?? '',
